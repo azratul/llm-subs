@@ -278,6 +278,7 @@ def batch(
             interactive=not non_interactive,
             force=force,
             strict_lang=strict_lang,
+            resume=not no_resume,
         )
     except runtime._EXPECTED_ERRORS as exc:
         runtime.console.print(f"[red]Error:[/red] {exc}")

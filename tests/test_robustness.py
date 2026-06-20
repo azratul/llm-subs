@@ -971,3 +971,72 @@ def test_translate_uses_project_settings_as_defaults(tmp_path, monkeypatch):
     CliRunner().invoke(app, ["translate", str(src), "--project", "P", "--provider", "claude"])
     assert captured["provider"] == "claude"
     assert captured["model"] == "qwen3:4b"
+
+
+# --- batch --no-resume wiring (regression) -------------------------------------------
+
+
+def test_batch_forwards_no_resume_to_translate(tmp_path, monkeypatch):
+    # batch_translate forwards its kwargs to translate_subtitle; assert --no-resume reaches it.
+    captured: dict = {}
+
+    def fake_translate(path, **kwargs):
+        captured.update(kwargs)
+        return _fake_translate_result(tmp_path, [])
+
+    monkeypatch.setattr(pipeline, "translate_subtitle", fake_translate)
+    _one_line_srt(tmp_path / "ep01.en.srt")
+
+    result = CliRunner().invoke(
+        app, ["batch", str(tmp_path), "--glob", "*.srt", "--no-resume", "--provider", "identity"]
+    )
+    assert result.exit_code == 0
+    assert captured.get("resume") is False
+
+    captured.clear()
+    CliRunner().invoke(app, ["batch", str(tmp_path), "--glob", "*.srt", "--provider", "identity"])
+    assert captured.get("resume") is True  # default keeps the checkpoint
+
+
+# --- --output must not overwrite the source (#5) -------------------------------------
+
+
+def test_translate_refuses_to_overwrite_source(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "PROJECTS_DIR", tmp_path / "projects")
+    src = tmp_path / "ep.srt"
+    _one_line_srt(src)
+    # --output aimed at the source file (same suffix/format) must be refused, even with force.
+    with pytest.raises(pipeline.PipelineError, match="Refusing to overwrite the source"):
+        pipeline.translate_subtitle(
+            src,
+            provider="identity",
+            interactive=False,
+            project="P",
+            output=src,
+            fmt="srt",
+            force=True,
+        )
+
+
+# --- model-injected ASS tags are stripped (#6) ---------------------------------------
+
+
+def test_sanitize_strips_injected_ass_tags_but_keeps_literal_braces():
+    from translate_subs.subs.reinserter import sanitize_model_text
+
+    assert sanitize_model_text(r"Hola {\b1}mundo{\b0}") == "Hola mundo"
+    assert sanitize_model_text(r"{\an8}Cartel: PELIGRO") == "Cartel: PELIGRO"
+    # A literal brace with no backslash command is dialogue, not a tag — keep it.
+    assert sanitize_model_text("usa {llave} aquí") == "usa {llave} aquí"
+
+
+def test_apply_translation_neutralizes_injected_tag(tmp_path):
+    subs = pysubs2.SSAFile()
+    subs.events.append(pysubs2.SSAEvent(start=0, end=2000, text="hi"))
+    from translate_subs.domain.models import TranslatableUnit
+    from translate_subs.subs.reinserter import apply_translations
+
+    unit = TranslatableUnit(id="0001", event_index=0, start=0, end=2000, style="Default", text="hi")
+    apply_translations(subs, [unit], {"0001": r"Hola {\i1}mundo"})
+    assert "\\i1" not in subs.events[0].text
+    assert "Hola" in subs.events[0].plaintext and "mundo" in subs.events[0].plaintext

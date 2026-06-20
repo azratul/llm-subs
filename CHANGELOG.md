@@ -17,6 +17,12 @@ move these entries under a dated version heading.
   coverage to ~91% (the `commands/` and `workflows/` packages were the thin spots after the split).
 
 ### Fixed
+- `batch --no-resume` is now honoured: the flag was defined but never forwarded to each episode's
+  translation, so checkpoints were always reused.
+- `translate`/`batch` refuse to write the output over the file they are reading from (a misaimed
+  `--output`/`--out-dir`, even with `--force`), so the source subtitle can't be destroyed.
+- Model output is sanitized before reinsertion: an ASS override block returned inside a line
+  (e.g. `{\b1}`) is stripped instead of becoming a live tag; literal braces in dialogue are kept.
 - Sidecar/output language suffixes now cover the full ISO 639-1 set, so a file in any language
   (e.g. `episode.ru.srt`) is detected, not only a hardcoded handful.
 - `ollama` and `litellm` reject null/non-text model content with a retryable provider error

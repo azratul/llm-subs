@@ -10,10 +10,23 @@ tags are stripped by the writer and `flatten_overlaps` merges simultaneous cues 
 
 from __future__ import annotations
 
+import re
+
 import pysubs2
 
 from translate_subs.domain.models import TranslatableUnit
 from translate_subs.subs.extractor import leading_tags
+
+# An ASS override block injected by the model: braces wrapping a backslash command
+# (e.g. {\b1}, {\an8}, {\pos(..)}). A literal brace in dialogue like "{cool}" has no
+# backslash and is left untouched. The legitimate whole-line lead block is restored
+# separately, so stripping these from the model text never drops real positioning.
+_INJECTED_TAG_RE = re.compile(r"\{[^{}]*\\[^{}]*\}")
+
+
+def sanitize_model_text(text: str) -> str:
+    """Drop ASS override blocks a model may have returned inside the visible text."""
+    return _INJECTED_TAG_RE.sub("", text)
 
 
 def replace_visible_text(
@@ -24,7 +37,7 @@ def replace_visible_text(
 ) -> None:
     """Replace an event's visible text without dropping whole-line ASS override tags."""
     preserved = leading_tags(event) if lead_tags is None else lead_tags
-    event.plaintext = text
+    event.plaintext = sanitize_model_text(text)
     if preserved:
         event.text = preserved + event.text
 

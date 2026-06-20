@@ -48,6 +48,11 @@ _EXPECTED_PIPELINE_ERRORS = (ProviderError, SourceError, MediaToolError, OSError
 ProviderFactory = Callable[..., TranslationProvider]
 
 
+def _same_path(a: str | Path, b: str | Path) -> bool:
+    """True if two paths point at the same location (resolved, even if not yet created)."""
+    return Path(a).resolve() == Path(b).resolve()
+
+
 def translate_subtitle(
     input_path: str | Path,
     *,
@@ -95,6 +100,13 @@ def translate_subtitle(
         out_file = Path(output).with_suffix(f".{fmt}")
     else:
         out_file = output_path(source.origin, fmt=fmt, out_dir=out_dir, lang=lang_code(target))
+    # Never write over the file we are reading from: a misaimed --output (or a same-name source)
+    # would otherwise destroy the original subtitle, even with --force.
+    if _same_path(out_file, source.subtitle_path) or _same_path(out_file, source.origin):
+        raise PipelineError(
+            f"Refusing to overwrite the source file with the output: {out_file}. "
+            "Choose a different --output/--out-dir or --target."
+        )
     if out_file.exists() and not force:
         raise PipelineError(f"Output already exists: {out_file}. Use --force to overwrite.")
 
