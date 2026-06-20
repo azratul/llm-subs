@@ -132,6 +132,7 @@ def analyze(
 
 def update_memory_command(
     input: Path = typer.Argument(..., help="Subtitle/video whose episode.context.json exists."),
+    target: str = typer.Option("es-latam", help="Target language/variant of the memory to update."),
     track: int | None = typer.Option(None, help="Embedded track index (when several exist)."),
     lang: str = typer.Option("en", help="Preferred source language when picking a track."),
     project: str | None = typer.Option(None, help="Project/series name."),
@@ -146,6 +147,7 @@ def update_memory_command(
     try:
         result = runtime.update_memory(
             input,
+            target=target,
             track_index=track,
             lang=lang,
             project=project,
@@ -163,11 +165,12 @@ def update_memory_command(
 
 def compact_memory_command(
     project: str = typer.Argument(..., help="Project/series name."),
+    target: str = typer.Option("es-latam", help="Target language/variant of the memory to prune."),
 ):
     """Prune redundant series memory (identity glossary terms, duplicate/empty characters)."""
     runtime = _runtime()
     try:
-        result = runtime.compact_memory(project)
+        result = runtime.compact_memory(project, target)
     except runtime._EXPECTED_ERRORS as exc:
         runtime.console.print(f"[red]Error:[/red] {exc}")
         raise typer.Exit(code=1)
@@ -186,11 +189,14 @@ def compact_memory_command(
 
 def resolve_conflicts_command(
     project: str = typer.Argument(..., help="Project/series name."),
+    target: str = typer.Option(
+        "es-latam", help="Target language/variant whose conflicts to resolve."
+    ),
 ):
     """Walk flagged memory conflicts and resolve each (keep stored / use suggested / skip)."""
     runtime = _runtime()
     try:
-        result = runtime.resolve_conflicts(project, runtime._interactive_conflict_choice)
+        result = runtime.resolve_conflicts(project, runtime._interactive_conflict_choice, target)
     except runtime._EXPECTED_ERRORS as exc:
         runtime.console.print(f"[red]Error:[/red] {exc}")
         raise typer.Exit(code=1)

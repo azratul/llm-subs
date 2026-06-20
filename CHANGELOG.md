@@ -10,6 +10,11 @@ move these entries under a dated version heading.
 ## [Unreleased]
 
 ### Added
+- Per-target memory layout: series memory, glossary, style guide, episode context and checkpoints
+  now live under `<project>/<lang>`, so a glossary built for one target language no longer leaks
+  into a different target. Existing installs (files directly under `<project>/`) keep working for
+  the default target via a read/write fallback, so nothing is orphaned; a `migrate-memory` command
+  to relocate them is planned. `compact-memory`/`resolve-conflicts`/`update-memory` gain `--target`.
 - Stale-context detection: `analyze` records a fingerprint of the analyzed subtitle in
   `episode.context.json`; `translate` and `review` warn (never block) when the subtitle has changed
   since it was analyzed. Legacy context files without the fingerprint are not flagged.

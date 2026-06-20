@@ -39,7 +39,8 @@ from translate_subs.workflows.models import BatchItem, BatchResult, PipelineErro
 from translate_subs.workflows.support import (
     atomic_save,
     context_path,
-    project_dir,
+    episode_dir,
+    memory_root,
     project_episode,
 )
 
@@ -111,14 +112,13 @@ def translate_subtitle(
         raise PipelineError(f"Output already exists: {out_file}. Use --force to overwrite.")
 
     project_name, episode_name = project_episode(source, project)
-    project_path = project_dir(project_name)
-    jobs_dir = project_path / episode_name / "jobs"
+    jobs_dir = episode_dir(project_name, target, episode_name) / "jobs"
 
-    project_memory = ProjectMemory.load(project_path)
+    project_memory = ProjectMemory.load(memory_root(project_name, target))
     context_used = False
     context_stale = False
     context = None
-    episode_context_path = context_path(project_name, episode_name)
+    episode_context_path = context_path(project_name, target, episode_name)
     if use_context and episode_context_path.exists():
         context = EpisodeContext.model_validate_json(episode_context_path.read_text("utf-8"))
         context_used = True

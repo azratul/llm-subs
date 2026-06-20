@@ -30,7 +30,11 @@ from translate_subs.workflows.models import (
     ResolveConflictsResult,
     UpdateMemoryResult,
 )
-from translate_subs.workflows.support import context_path, project_dir, project_episode
+from translate_subs.workflows.support import (
+    context_path,
+    memory_root,
+    project_episode,
+)
 
 
 def prior_known(project_memory: ProjectMemory) -> str | None:
@@ -48,10 +52,11 @@ def merge_into_memory(
     project_name: str,
     context: EpisodeContext,
     *,
+    target: str,
     policy: ConflictPolicy,
     resolver: ConflictResolver | None,
 ) -> MergeReport:
-    project_memory = ProjectMemory.load(project_dir(project_name))
+    project_memory = ProjectMemory.load(memory_root(project_name, target))
     report = merge_episode_context(
         project_memory.memory,
         project_memory.glossary,
@@ -94,7 +99,7 @@ def analyze_subtitle(
         raise PipelineError("No translatable lines found in the subtitle.")
 
     project_name, episode_name = project_episode(source, project)
-    project_memory = ProjectMemory.load(project_dir(project_name))
+    project_memory = ProjectMemory.load(memory_root(project_name, target))
     context = analyze_episode(
         units,
         target=target,
@@ -105,11 +110,12 @@ def analyze_subtitle(
     # Record the source fingerprint so later runs can detect a changed subtitle.
     context.source_hash = source_digest(units)
 
-    out_path = context_path(project_name, episode_name)
+    out_path = context_path(project_name, target, episode_name)
     atomic_write_text(out_path, context.model_dump_json(indent=2))
     report = merge_into_memory(
         project_name,
         context,
+        target=target,
         policy=on_conflict,
         resolver=conflict_resolver,
     )
@@ -126,6 +132,7 @@ def analyze_subtitle(
 def update_memory(
     input_path: str | Path,
     *,
+    target: str = "es-latam",
     track_index: int | None = None,
     lang: str = "en",
     project: str | None = None,
@@ -142,25 +149,26 @@ def update_memory(
         interactive=interactive,
     )
     project_name, episode_name = project_episode(source, project)
-    context_file = context_path(project_name, episode_name)
+    context_file = context_path(project_name, target, episode_name)
     if not context_file.exists():
         raise PipelineError(f"No episode context at {context_file}. Run `analyze` first.")
     context = EpisodeContext.model_validate_json(context_file.read_text("utf-8"))
     report = merge_into_memory(
         project_name,
         context,
+        target=target,
         policy=on_conflict,
         resolver=conflict_resolver,
     )
     return UpdateMemoryResult(
-        project_dir=project_dir(project_name),
+        project_dir=memory_root(project_name, target),
         context_path=context_file,
         merge=report,
     )
 
 
-def compact_memory(project: str) -> CompactMemoryResult:
-    project_path = project_dir(project)
+def compact_memory(project: str, target: str = "es-latam") -> CompactMemoryResult:
+    project_path = memory_root(project, target)
     if not project_path.exists():
         raise PipelineError(f"No memory at {project_path}. Run `analyze` first.")
     project_memory = ProjectMemory.load(project_path)
@@ -184,8 +192,10 @@ def _apply_conflict_choice(project_memory: ProjectMemory, conflict: dict) -> boo
     return False
 
 
-def resolve_conflicts(project: str, prompt: ConflictPrompt) -> ResolveConflictsResult:
-    project_path = project_dir(project)
+def resolve_conflicts(
+    project: str, prompt: ConflictPrompt, target: str = "es-latam"
+) -> ResolveConflictsResult:
+    project_path = memory_root(project, target)
     if not project_path.exists():
         raise PipelineError(f"No memory at {project_path}. Run `analyze` first.")
     project_memory = ProjectMemory.load(project_path)

@@ -152,7 +152,7 @@ def test_compact_memory_command(tmp_path, monkeypatch):
             removed_empty_characters=1,
         ),
     )
-    monkeypatch.setattr(cli, "compact_memory", lambda project: result)
+    monkeypatch.setattr(cli, "compact_memory", lambda project, target: result)
     out = runner.invoke(app, ["compact-memory", "P"])
     assert out.exit_code == 0 and "Glossary" in out.stdout
 
@@ -161,7 +161,7 @@ def test_resolve_conflicts_command_empty_and_resolved(tmp_path, monkeypatch):
     monkeypatch.setattr(
         cli,
         "resolve_conflicts",
-        lambda project, prompt: ResolveConflictsResult(
+        lambda project, prompt, target: ResolveConflictsResult(
             project_dir=tmp_path / "P", resolved=0, remaining=0
         ),
     )
@@ -171,7 +171,7 @@ def test_resolve_conflicts_command_empty_and_resolved(tmp_path, monkeypatch):
     monkeypatch.setattr(
         cli,
         "resolve_conflicts",
-        lambda project, prompt: ResolveConflictsResult(
+        lambda project, prompt, target: ResolveConflictsResult(
             project_dir=tmp_path / "P", resolved=2, remaining=1
         ),
     )

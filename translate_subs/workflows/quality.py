@@ -26,7 +26,7 @@ from translate_subs.workflows.models import PipelineError, ReviewResult, Tighten
 from translate_subs.workflows.support import (
     atomic_save,
     context_path,
-    project_dir,
+    memory_root,
     project_episode,
     readability_path,
     review_path,
@@ -84,10 +84,10 @@ def review_translation(
     )
 
     project_name, episode_name = project_episode(source, project)
-    pm = ProjectMemory.load(project_dir(project_name))
+    pm = ProjectMemory.load(memory_root(project_name, target))
     glossary = dict(pm.glossary)
     context_stale = False
-    ctx_file = context_path(project_name, episode_name)
+    ctx_file = context_path(project_name, target, episode_name)
     if ctx_file.exists():
         ctx = EpisodeContext.model_validate_json(ctx_file.read_text("utf-8"))
         for term, rendering in ctx.glossary.items():
@@ -118,7 +118,7 @@ def review_translation(
         )
 
     report = ReviewReport(episode=episode_name, findings=findings)
-    out_path = review_path(project_name, episode_name)
+    out_path = review_path(project_name, target, episode_name)
     atomic_write_text(out_path, render_markdown(report))
 
     aligned = (
@@ -230,7 +230,11 @@ def tighten_subtitle(
 
     project_name = project or translated_path.parent.name or "default"
     episode_name = base_stem(translated_path)
-    out_path = readability_path(project_name, episode_name)
+    # tighten has no --target; infer it from the file's own language suffix (e.g. ep.es.srt -> es)
+    # so the report lands beside the rest of that language's state, else fall back to the default.
+    full_stem = translated_path.stem
+    target = full_stem[len(episode_name) :].lstrip(".") if full_stem != episode_name else None
+    out_path = readability_path(project_name, target or config.DEFAULT_TARGET, episode_name)
     atomic_write_text(out_path, render_readability_md(episode_name, entries))
 
     return TightenResult(

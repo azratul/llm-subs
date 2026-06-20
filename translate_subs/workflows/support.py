@@ -17,7 +17,7 @@ from translate_subs.ai.provider import (
     TranslationProvider,
 )
 from translate_subs.io.source_resolver import ResolvedSource
-from translate_subs.naming import base_stem
+from translate_subs.naming import base_stem, lang_code
 from translate_subs.subs import document
 from translate_subs.subs.validator import ValidationResult
 from translate_subs.workflows.models import PipelineError
@@ -66,6 +66,26 @@ def project_dir(project: str) -> Path:
     return base / name
 
 
+def memory_root(project: str, target: str) -> Path:
+    """Per-target memory directory for a project, with read-fallback to the legacy layout.
+
+    The series memory (glossary, style guide, episode context, checkpoints) is target-specific:
+    a Spanish glossary must not steer a later French run. New state lives under
+    ``<projects>/<project>/<lang>`` (e.g. ``.../es``). Installs that predate this kept their
+    files directly under ``<projects>/<project>``; for the default target we keep using that
+    legacy location while it holds data (writes land there too), so an upgrade never orphans
+    accumulated memory — the `migrate-memory` command relocates it on demand.
+    """
+    base = project_dir(project)
+    per_target = base / lang_code(target)
+    if per_target.exists():
+        return per_target
+    legacy_has_data = (base / "memory.json").exists() or (base / "glossary.json").exists()
+    if lang_code(target) == lang_code(config.DEFAULT_TARGET) and legacy_has_data:
+        return base
+    return per_target
+
+
 def atomic_save(
     subs,
     out_path: str | Path,
@@ -98,13 +118,17 @@ def atomic_save(
         raise
 
 
-def context_path(project: str, episode: str) -> Path:
-    return project_dir(project) / episode / "episode.context.json"
+def episode_dir(project: str, target: str, episode: str) -> Path:
+    return memory_root(project, target) / episode
 
 
-def review_path(project: str, episode: str) -> Path:
-    return project_dir(project) / episode / "episode.review.md"
+def context_path(project: str, target: str, episode: str) -> Path:
+    return episode_dir(project, target, episode) / "episode.context.json"
 
 
-def readability_path(project: str, episode: str) -> Path:
-    return project_dir(project) / episode / "episode.readability.md"
+def review_path(project: str, target: str, episode: str) -> Path:
+    return episode_dir(project, target, episode) / "episode.review.md"
+
+
+def readability_path(project: str, target: str, episode: str) -> Path:
+    return episode_dir(project, target, episode) / "episode.readability.md"

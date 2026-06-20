@@ -58,7 +58,7 @@ def test_translate_flags_stale_context(tmp_path, monkeypatch):
     src = tmp_path / "ep.en.srt"
     _save_srt(src, "Hello.")
 
-    ctx_file = context_path("P", "ep")
+    ctx_file = context_path("P", "es-latam", "ep")
     ctx_file.parent.mkdir(parents=True, exist_ok=True)
     # A context whose stored hash does not match this source -> stale.
     ctx_file.write_text(EpisodeContext(source_hash="0" * 16).model_dump_json(), encoding="utf-8")
@@ -76,7 +76,7 @@ def test_translate_not_stale_when_hash_matches(tmp_path, monkeypatch):
     _save_srt(src, "Hello.")
     units = extract_units(document.load(src))
 
-    ctx_file = context_path("P", "ep")
+    ctx_file = context_path("P", "es-latam", "ep")
     ctx_file.parent.mkdir(parents=True, exist_ok=True)
     ctx_file.write_text(
         EpisodeContext(source_hash=source_digest(units)).model_dump_json(), encoding="utf-8"
@@ -94,7 +94,7 @@ def test_legacy_context_without_hash_is_never_stale(tmp_path, monkeypatch):
     src = tmp_path / "ep.en.srt"
     _save_srt(src, "Hello.")
 
-    ctx_file = context_path("P", "ep")
+    ctx_file = context_path("P", "es-latam", "ep")
     ctx_file.parent.mkdir(parents=True, exist_ok=True)
     # An older context file has no source_hash; we can't tell, so we don't warn.
     ctx_file.write_text(EpisodeContext().model_dump_json(), encoding="utf-8")

@@ -145,6 +145,7 @@ def analyze_subtitle(
 def update_memory(
     input_path: str | Path,
     *,
+    target: str = "es-latam",
     track_index: int | None = None,
     lang: str = "en",
     project: str | None = None,
@@ -155,6 +156,7 @@ def update_memory(
     """Re-merge an existing episode.context.json into series memory (no LLM call)."""
     return _update_memory(
         input_path,
+        target=target,
         track_index=track_index,
         lang=lang,
         project=project,
@@ -165,14 +167,16 @@ def update_memory(
     )
 
 
-def compact_memory(project: str) -> CompactMemoryResult:
+def compact_memory(project: str, target: str = "es-latam") -> CompactMemoryResult:
     """Prune redundant entries from a series' memory (no LLM call)."""
-    return _compact_memory(project)
+    return _compact_memory(project, target)
 
 
-def resolve_conflicts(project: str, prompt: ConflictPrompt) -> ResolveConflictsResult:
+def resolve_conflicts(
+    project: str, prompt: ConflictPrompt, target: str = "es-latam"
+) -> ResolveConflictsResult:
     """Walk flagged conflicts; apply each decision and drop resolved ones from the log."""
-    return _resolve_conflicts(project, prompt)
+    return _resolve_conflicts(project, prompt, target)
 
 
 def translate_subtitle(

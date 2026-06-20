@@ -771,7 +771,7 @@ def test_translate_resumes_after_block_failure(tmp_path, monkeypatch):
     with pytest.raises(ProviderError):
         pipeline.translate_subtitle(source, provider="claude", interactive=False, project="P")
 
-    checkpoint = tmp_path / "projects" / "P" / "ep" / "translations.checkpoint.json"
+    checkpoint = tmp_path / "projects" / "P" / "es" / "ep" / "translations.checkpoint.json"
     assert checkpoint.exists()
 
     # Second run: a healthy provider should only need to translate the missing block 2.
@@ -1040,3 +1040,51 @@ def test_apply_translation_neutralizes_injected_tag(tmp_path):
     apply_translations(subs, [unit], {"0001": r"Hola {\i1}mundo"})
     assert "\\i1" not in subs.events[0].text
     assert "Hola" in subs.events[0].plaintext and "mundo" in subs.events[0].plaintext
+
+
+# --- per-target memory layout + backward-compat fallback (#3) -------------------------
+
+
+def test_memory_root_segments_by_target(tmp_path, monkeypatch):
+    from translate_subs.workflows.support import memory_root
+
+    monkeypatch.setattr(config, "PROJECTS_DIR", tmp_path / "projects")
+    es = memory_root("Show", "es-latam")
+    fr = memory_root("Show", "fr-FR")
+    assert es.name == "es" and fr.name == "fr"
+    assert es != fr  # a French run can't inherit the Spanish glossary
+
+
+def test_memory_root_reads_legacy_layout_for_default_target(tmp_path, monkeypatch):
+    from translate_subs.workflows.support import memory_root, project_dir
+
+    monkeypatch.setattr(config, "PROJECTS_DIR", tmp_path / "projects")
+    # Simulate a pre-upgrade install: memory.json sits directly under the project dir.
+    legacy = project_dir("Show")
+    legacy.mkdir(parents=True)
+    (legacy / "memory.json").write_text("{}", encoding="utf-8")
+
+    # Default target keeps using the legacy location (no orphaning) until migrated...
+    assert memory_root("Show", "es-latam") == legacy
+    # ...but a different target gets its own fresh per-language dir.
+    assert memory_root("Show", "fr").name == "fr"
+
+
+def test_translate_does_not_leak_glossary_across_targets(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "PROJECTS_DIR", tmp_path / "projects")
+    src = tmp_path / "ep.en.srt"
+    _one_line_srt(src)
+
+    # Seed an es-latam glossary the way analyze would, under the per-target memory root.
+    from translate_subs.memory.store import ProjectMemory
+    from translate_subs.workflows.support import memory_root
+
+    es_mem = ProjectMemory.load(memory_root("P", "es-latam"))
+    es_mem.glossary["Sword"] = "Espada"
+    es_mem.save()
+
+    # A French translation loads the (empty) French memory, not the Spanish one.
+    fr_mem = ProjectMemory.load(memory_root("P", "fr"))
+    assert "Sword" not in fr_mem.glossary
+    assert (memory_root("P", "es-latam") / "glossary.json").exists()
+    assert not (memory_root("P", "fr") / "glossary.json").exists()
