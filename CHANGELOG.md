@@ -27,6 +27,20 @@ move these entries under a dated version heading.
   recorded by `analyze` but previously ignored when translating.
 
 ### Fixed
+- Per-series memory is now segmented by the **full target**, not the collapsed language code:
+  `es-latam` and `es-ES` (or any two variants of one language) get separate memory subtrees instead
+  of sharing `<project>/es/`, so a Castilian glossary can't contaminate a Latin-American run.
+- When `--project` is omitted, a season/specials subfolder (`Season 1`, `S02`, `Specials`, …) is
+  skipped in favour of the series folder above it, so two unrelated series sitting in their own
+  `Season 1` folders no longer default to the same project and share memory.
+- The stale-context fingerprint now includes each line's **speaker**, so reassigning a line to a
+  different character (which can flip gender/register) is flagged as a changed source instead of
+  silently passing the old context as still valid.
+- `review --apply` validates a `proper_name` fix deterministically: the suggested line must contain
+  a character name known to series memory, otherwise it stays a suggestion (with no known names, no
+  proper_name fix is auto-applied) — the same treatment glossary fixes already get.
+- `ReadabilityLimits` rejects non-positive values up front instead of producing nonsensical
+  budgets.
 - Generated files (translated subtitles, review/readability reports, memory and checkpoints) now
   respect the process umask instead of always being created `0600`, so a media server or another
   user (Jellyfin/Plex) can read the output.

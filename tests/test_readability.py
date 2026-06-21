@@ -103,6 +103,17 @@ def test_tighten_applies_compaction(tmp_path, monkeypatch):
     assert reloaded.events[1].plaintext == "Hola."
 
 
+def test_readability_limits_reject_non_positive():
+    ReadabilityLimits()  # defaults are valid
+    for bad in (
+        {"max_chars_per_line": 0},
+        {"max_lines": 0},
+        {"max_chars_per_second": -1},
+    ):
+        with pytest.raises(ValueError, match="must be positive"):
+            ReadabilityLimits(**bad)
+
+
 def test_is_safe_improvement_accepts_and_rejects():
     from translate_subs.readability.metrics import is_safe_improvement
 

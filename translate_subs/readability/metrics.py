@@ -11,6 +11,10 @@ class ReadabilityLimits:
     max_lines: int = 2
     max_chars_per_second: float = 18.0
 
+    def __post_init__(self) -> None:
+        if min(self.max_chars_per_line, self.max_lines, self.max_chars_per_second) <= 0:
+            raise ValueError("Readability limits must be positive.")
+
 
 @dataclass(frozen=True)
 class LineMetrics:

@@ -5,6 +5,7 @@ from __future__ import annotations
 import contextlib
 import hashlib
 import os
+import re
 import tempfile
 from collections.abc import Callable
 from pathlib import Path
@@ -19,7 +20,7 @@ from translate_subs.ai.provider import (
 )
 from translate_subs.fsutil import default_file_mode
 from translate_subs.io.source_resolver import ResolvedSource
-from translate_subs.naming import base_stem, lang_code
+from translate_subs.naming import base_stem, target_dirname
 from translate_subs.subs import document
 from translate_subs.subs.validator import ValidationResult
 from translate_subs.workflows.models import PipelineError
@@ -51,8 +52,26 @@ def make_ai_runner(provider: str, *, model: str | None = None, reasoning: str | 
     return make_runner(provider, model, reasoning)
 
 
+# A subtitle usually lives in a season subfolder (`<Series>/Season 1/ep.mkv`), so the immediate
+# parent is a generic "Season 1" — a poor default project, since two unrelated series would then
+# share one memory. When the parent looks like a season/specials folder, default to the series
+# folder above it instead.
+_SEASON_DIR_RE = re.compile(
+    r"^(season|series|temporada|saison|staffel|stagione)\s*\d+$|^s\d{1,3}$|^specials?$",
+    re.IGNORECASE,
+)
+
+
+def default_project(origin: Path) -> str:
+    """Best-effort series name when `--project` is omitted (see `_SEASON_DIR_RE`)."""
+    parent = origin.parent
+    if _SEASON_DIR_RE.match(parent.name) and parent.parent != parent and parent.parent.name:
+        return parent.parent.name
+    return parent.name or "default"
+
+
 def project_episode(source: ResolvedSource, project: str | None) -> tuple[str, str]:
-    project_name = project or source.origin.parent.name or "default"
+    project_name = project or default_project(source.origin)
     return project_name, episode_key(source.origin)
 
 
@@ -69,12 +88,14 @@ def project_dir(project: str) -> Path:
 
 
 def memory_root(project: str, target: str) -> Path:
-    """Per-target memory directory: ``<projects>/<project>/<lang>``.
+    """Per-target memory directory: ``<projects>/<project>/<target>``.
 
     The series memory (glossary, style guide, episode context, checkpoints) is target-specific:
     a Spanish glossary must not steer a later French run, so each target gets its own subtree.
+    The directory is the *full* target (e.g. ``es-latam``/``es-es``), not the collapsed language
+    code, so a Latin-American and a Castilian Spanish run never share — and contaminate — memory.
     """
-    return project_dir(project) / lang_code(target)
+    return project_dir(project) / target_dirname(target)
 
 
 def episode_key(origin: Path) -> str:

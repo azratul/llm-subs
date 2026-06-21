@@ -265,7 +265,7 @@ scripts; the file is still written so you can inspect it), and `--no-resume` (se
 ### Resume, caching and progress
 
 Translating a full episode is dozens of slow LLM calls. Each block's result is checkpointed to
-`<project>/<lang>/<episode>/translations.checkpoint.json` as soon as it returns, keyed by a hash of
+`<project>/<target>/<episode>/translations.checkpoint.json` as soon as it returns, keyed by a hash of
 everything that steers that block — target, rules, its lines **and the before/after context lines
 sent with it**. So:
 
@@ -323,7 +323,7 @@ setting, then the tool's built-in default. The auxiliary commands (`analyze`, `r
 `--project "Series Name"` identifies the memory shared across episodes. It is not an input
 directory, it does not discover files, and it does not trigger analysis automatically.
 
-- `analyze --project ...` creates or updates `data/projects/<series>/<target-lang>/`, the
+- `analyze --project ...` creates or updates `data/projects/<series>/<target>/`, the
   episode's context card, the character memory, and the glossary.
 - `translate --project ...` only loads that memory and context if they already exist.
 - `review --project ...` uses the same information to review the translation.
@@ -342,8 +342,10 @@ uv run translate-subs translate episode.mkv \
 
 ## Memory and conflicts
 
-The memory created by `analyze` lives under `data/projects/<series>/<target-lang>/` (segmented by
-target language, so a glossary built for one language never steers another):
+The memory created by `analyze` lives under `data/projects/<series>/<target>/` (segmented by the
+full target — `es-latam` and `es-ES` are kept apart — so a glossary built for one never steers
+another). When `--project` is omitted the series name is taken from the source's folder, skipping a
+season/specials subfolder (`Season 1`, `S02`, `Specials`) in favour of the series folder above it:
 
 - `memory.json` — characters (name, gender, style, relationships).
 - `glossary.json` — fixed terms (organizations, places, techniques, titles…).

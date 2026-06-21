@@ -118,6 +118,7 @@ def review_translation(
             genders=confirmed,
             target=target,
             source_lang=lang,
+            names=names,
             runner=runner or ai_runner_factory(provider, model=model, reasoning=reasoning),
             max_retries=max_retries,
         )

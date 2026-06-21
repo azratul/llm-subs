@@ -63,6 +63,18 @@ def lang_code(target: str) -> str:
     return code or "out"
 
 
+def target_dirname(target: str) -> str:
+    """Filesystem-safe, case-normalized directory name for a *full* target.
+
+    Unlike `lang_code` (which collapses both 'es-latam' and 'es-ES' to 'es'), this keeps the
+    region so different variants get separate memory subtrees and can't contaminate each other.
+    Used only for the on-disk memory layout; the output *filename* still uses `lang_code`.
+    """
+    name = target.strip().lower().replace("_", "-")
+    cleaned = "".join(ch for ch in name if ch.isalnum() or ch == "-").strip("-")
+    return cleaned or "out"
+
+
 def base_stem(origin: Path) -> str:
     """Original name without extension and without a trailing language suffix."""
     stem = origin.stem

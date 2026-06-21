@@ -109,6 +109,41 @@ def test_safe_policy_glossary_requires_rendering_in_suggestion():
     assert findings[1].auto is False
 
 
+def test_safe_policy_proper_name_requires_known_name():
+    lines = [_line("0001", "a", "x"), _line("0002", "b", "y")]
+    findings = [
+        # Inserts a known character name -> safe.
+        Finding(
+            id="0001",
+            kind="proper_name",
+            current="Alicia",
+            suggested="Alice",
+            message="",
+            auto=True,
+        ),
+        # No known name in the suggestion -> demoted, even though the model called it safe.
+        Finding(
+            id="0002", kind="proper_name", current="x", suggested="whatever", message="", auto=True
+        ),
+    ]
+    apply_safe_policy(findings, lines, {}, {}, ["Alice", "Bob"])
+    assert findings[0].auto is True
+    assert findings[1].auto is False
+    # With no known names at all, a proper_name fix can't be verified, so it is never auto.
+    again = [
+        Finding(
+            id="0001",
+            kind="proper_name",
+            current="Alicia",
+            suggested="Alice",
+            message="",
+            auto=True,
+        )
+    ]
+    apply_safe_policy(again, lines, {}, {}, [])
+    assert again[0].auto is False
+
+
 def test_render_markdown_splits_warnings_and_fixes():
     report = ReviewReport(
         episode="ep01",
@@ -205,7 +240,7 @@ def test_review_translation_applies_only_safe_fixes(tmp_path, monkeypatch):
     translated_path = tmp_path / "ep01.es.srt"
     translated.save(str(translated_path), format_="srt")
 
-    project_dir = tmp_path / "projects" / "Serie" / "es"  # per-target memory root (es-latam)
+    project_dir = tmp_path / "projects" / "Serie" / "es-latam"  # per-target memory root
     project_dir.mkdir(parents=True)
     (project_dir / "memory.json").write_text(
         json.dumps({"characters": [{"name": "Yumi", "gender": "female"}]}), encoding="utf-8"
@@ -255,6 +290,16 @@ def test_review_translation_applies_only_safe_fixes(tmp_path, monkeypatch):
 
 def test_review_apply_preserves_ass_leading_tags(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "PROJECTS_DIR", tmp_path / "projects")
+
+    # "Alice" must be a known character for the proper_name fix to qualify as safe.
+    from translate_subs.memory.models import CharacterMemory, SeriesMemory
+    from translate_subs.memory.store import ProjectMemory
+    from translate_subs.workflows.support import memory_root
+
+    ProjectMemory(
+        memory_root("Serie", "es-latam"),
+        memory=SeriesMemory(characters=[CharacterMemory(name="Alice")]),
+    ).save()
 
     source = pysubs2.SSAFile()
     source.events.append(pysubs2.SSAEvent(start=1000, end=3000, text="Alice"))

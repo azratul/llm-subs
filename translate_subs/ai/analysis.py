@@ -26,12 +26,14 @@ Runner = Callable[[str], str]
 
 
 def source_digest(units: list[TranslatableUnit]) -> str:
-    """Stable fingerprint of the analyzed source content (its ids and visible text).
+    """Stable fingerprint of the analyzed source content (id, speaker and visible text).
 
     Stored in the saved context so `translate`/`review` can warn when the subtitle has changed
-    since it was analyzed and the context sheet may no longer match.
+    since it was analyzed and the context sheet may no longer match. The speaker is part of the
+    fingerprint because reassigning a line to a different character can change gender/register
+    without altering the text — a change the context sheet would otherwise miss silently.
     """
-    blob = "\n".join(f"{unit.id}\t{unit.text}" for unit in units)
+    blob = "\n".join(f"{unit.id}\t{unit.speaker or ''}\t{unit.text}" for unit in units)
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()[:16]
 
 

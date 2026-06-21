@@ -105,10 +105,12 @@ def apply_safe_policy(
     lines: list[ReviewLine],
     confirmed_genders: dict[str, str],
     glossary: dict[str, str] | None = None,
+    names: list[str] | None = None,
 ) -> None:
     """Demote `auto` for anything that is not a vetted safe correction (in place)."""
     glossary = glossary or {}
     renderings = [v for v in glossary.values() if v.strip()]
+    known_names = [n for n in (names or []) if n.strip()]
     speaker_by_id = {line.id: (line.speaker or "") for line in lines}
     for f in findings:
         has_nonempty_fix = f.suggested is not None and bool(f.suggested.strip())
@@ -117,6 +119,7 @@ def apply_safe_policy(
         ):
             f.auto = False
             continue
+        suggested = (f.suggested or "").casefold()
         if f.kind == "gender":
             speaker = speaker_by_id.get(f.id or "", "")
             if confirmed_genders.get(speaker) not in ("male", "female"):
@@ -125,8 +128,13 @@ def apply_safe_policy(
             # A glossary fix must actually carry a glossary rendering; otherwise it is an
             # arbitrary rewrite mislabeled as `glossary`. Verify deterministically rather than
             # trusting the model's `auto_safe`.
-            suggested = (f.suggested or "").casefold()
             if not any(rendering.casefold() in suggested for rendering in renderings):
+                f.auto = False
+        elif f.kind == "proper_name":
+            # A proper-name fix must introduce a known character name from series memory; with no
+            # name to check against, we can't verify it deterministically, so we leave it for a
+            # human instead of trusting the model's label.
+            if not any(name.casefold() in suggested for name in known_names):
                 f.auto = False
 
 
@@ -137,6 +145,7 @@ def review_lines(
     genders: dict[str, str],
     target: str,
     source_lang: str = "source",
+    names: list[str] | None = None,
     runner: Runner,
     max_retries: int = 2,
 ) -> list[Finding]:
@@ -150,5 +159,5 @@ def review_lines(
         max_retries=max_retries,
         label="Review",
     )
-    apply_safe_policy(findings, lines, genders, glossary)
+    apply_safe_policy(findings, lines, genders, glossary, names)
     return findings

@@ -184,7 +184,7 @@ def test_compact_memory_command(tmp_path, monkeypatch):
 
     monkeypatch.setattr(config, "PROJECTS_DIR", tmp_path)
     pm = ProjectMemory(
-        project_dir=tmp_path / "S" / "es",  # per-target memory root (default target es-latam)
+        project_dir=tmp_path / "S" / "es-latam",  # per-target memory root (default target)
         memory=SeriesMemory(characters=[CharacterMemory(name="Extra")]),  # empty -> removed
         glossary={"A": "A", "B": "C"},  # identity "A" dropped
     )
@@ -193,7 +193,7 @@ def test_compact_memory_command(tmp_path, monkeypatch):
     result = CliRunner().invoke(app, ["compact-memory", "S"])
     assert result.exit_code == 0
 
-    reloaded = ProjectMemory.load(tmp_path / "S" / "es")
+    reloaded = ProjectMemory.load(tmp_path / "S" / "es-latam")
     assert reloaded.glossary == {"B": "C"}
     assert reloaded.memory.characters == []
 

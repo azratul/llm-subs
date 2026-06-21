@@ -37,6 +37,15 @@ def test_source_digest_is_stable_and_content_sensitive():
     assert source_digest(a) != source_digest([_unit(1, "Hello"), _unit(2, "Changed")])
 
 
+def test_source_digest_is_sensitive_to_speaker():
+    # Reassigning a line to another character changes gender/register without touching the text.
+    base = TranslatableUnit(
+        id="0001", event_index=0, start=0, end=500, style="Default", speaker="Aya", text="Hello"
+    )
+    moved = base.model_copy(update={"speaker": "Ken"})
+    assert source_digest([base]) != source_digest([moved])
+
+
 def test_analyze_stores_and_merges_source_hash(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "PROJECTS_DIR", tmp_path / "projects")
     src = tmp_path / "ep.en.srt"

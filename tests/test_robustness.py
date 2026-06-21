@@ -775,7 +775,7 @@ def test_translate_resumes_after_block_failure(tmp_path, monkeypatch):
     from translate_subs.workflows.support import episode_key
 
     episode = episode_key(source)
-    checkpoint = tmp_path / "projects" / "P" / "es" / episode / "translations.checkpoint.json"
+    checkpoint = tmp_path / "projects" / "P" / "es-latam" / episode / "translations.checkpoint.json"
     assert checkpoint.exists()
 
     # Second run: a healthy provider should only need to translate the missing block 2.
@@ -1055,8 +1055,28 @@ def test_memory_root_segments_by_target(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "PROJECTS_DIR", tmp_path / "projects")
     es = memory_root("Show", "es-latam")
     fr = memory_root("Show", "fr-FR")
-    assert es.name == "es" and fr.name == "fr"
+    assert es.name == "es-latam" and fr.name == "fr-fr"
     assert es != fr  # a French run can't inherit the Spanish glossary
+    # Region matters: a Latin-American and a Castilian run keep separate memory (full target,
+    # not the collapsed language code, so they can't contaminate each other).
+    assert memory_root("Show", "es-latam") != memory_root("Show", "es-ES")
+
+
+def test_default_project_skips_season_folder(tmp_path):
+    from translate_subs.workflows.support import default_project
+
+    # A bare season folder is a poor default; use the series folder above it.
+    series = tmp_path / "Cowboy Bebop"
+    (series / "Season 1").mkdir(parents=True)
+    assert default_project(series / "Season 1" / "ep01.mkv") == "Cowboy Bebop"
+    (series / "S02").mkdir()
+    assert default_project(series / "S02" / "ep01.mkv") == "Cowboy Bebop"
+    (series / "Specials").mkdir()
+    assert default_project(series / "Specials" / "ova.mkv") == "Cowboy Bebop"
+
+    # A normal folder is used as-is.
+    (tmp_path / "Some Movie").mkdir()
+    assert default_project(tmp_path / "Some Movie" / "movie.mkv") == "Some Movie"
 
 
 def test_episode_key_disambiguates_same_name_in_different_folders(tmp_path):
@@ -1196,6 +1216,13 @@ def test_checkpoint_signature_includes_effective_model(tmp_path, monkeypatch):
 
     from translate_subs.workflows.support import episode_key
 
-    cp = tmp_path / "projects" / "P" / "es" / episode_key(source) / "translations.checkpoint.json"
+    cp = (
+        tmp_path
+        / "projects"
+        / "P"
+        / "es-latam"
+        / episode_key(source)
+        / "translations.checkpoint.json"
+    )
     signature = json.loads(cp.read_text())["signature"]
     assert signature == "claude|claude-opus-4-8|"

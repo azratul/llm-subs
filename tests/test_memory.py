@@ -302,7 +302,7 @@ def test_resolve_conflicts_applies_and_drops(tmp_path, monkeypatch):
     from translate_subs.pipeline import resolve_conflicts
 
     monkeypatch.setattr(config, "PROJECTS_DIR", tmp_path)
-    pdir = tmp_path / "Serie" / "es"  # per-target memory root (default target es-latam)
+    pdir = tmp_path / "Serie" / "es-latam"  # per-target memory root (default target)
     pm = ProjectMemory(
         pdir,
         memory=SeriesMemory(characters=[CharacterMemory(name="Akira", gender="male")]),
