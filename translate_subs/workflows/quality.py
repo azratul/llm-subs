@@ -10,7 +10,12 @@ from translate_subs.ai.analysis import EpisodeContext, source_digest
 from translate_subs.memory.store import ProjectMemory, atomic_write_text
 from translate_subs.naming import base_stem
 from translate_subs.readability.compactor import FlaggedLine, compact_lines
-from translate_subs.readability.metrics import ReadabilityLimits, exceeds, measure
+from translate_subs.readability.metrics import (
+    ReadabilityLimits,
+    exceeds,
+    is_safe_improvement,
+    measure,
+)
 from translate_subs.readability.report import ReadabilityEntry
 from translate_subs.readability.report import render_markdown as render_readability_md
 from translate_subs.review.checks import DEFAULT_MAX_CHARS, run_deterministic_checks
@@ -207,13 +212,19 @@ def tighten_subtitle(
     for line in flagged:
         compact = compactions.get(line.id)
         residual: list[str] = []
+        rejected = False
         if compact is not None:
             event = subs.events[line.event_index]
-            residual = exceeds(measure(compact, event.start, event.end), limits)
-            if apply:
+            new_metrics = measure(compact, event.start, event.end)
+            residual = exceeds(new_metrics, limits)
+            # Only write a compaction that actually helps: a candidate that adds a new kind of
+            # violation or grows the text is kept out of the file (reported, not applied).
+            improved = is_safe_improvement(line.metrics, new_metrics, limits)
+            rejected = not improved
+            if apply and improved:
                 replace_visible_text(event, compact)
                 n_applied += 1
-            if residual:
+            if residual and improved:
                 n_residual += 1
         entries.append(
             ReadabilityEntry(
@@ -222,6 +233,7 @@ def tighten_subtitle(
                 current=line.text,
                 compact=compact,
                 residual=residual,
+                rejected=rejected,
             )
         )
 

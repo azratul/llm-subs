@@ -1093,3 +1093,106 @@ def test_translate_does_not_leak_glossary_across_targets(tmp_path, monkeypatch):
     assert "Sword" not in fr_mem.glossary
     assert (memory_root("P", "es-latam") / "glossary.json").exists()
     assert not (memory_root("P", "fr") / "glossary.json").exists()
+
+
+# --- generated files respect the umask (#1) ------------------------------------------
+
+
+def test_atomic_write_text_respects_umask(tmp_path):
+    import os
+
+    from translate_subs.fsutil import atomic_write_text
+
+    old = os.umask(0o022)
+    try:
+        target = tmp_path / "out.json"
+        atomic_write_text(target, "data")
+        mode = target.stat().st_mode & 0o777
+    finally:
+        os.umask(old)
+    # mkstemp would leave 0o600; respecting the umask gives the share-friendly 0o644.
+    assert mode == 0o644
+
+
+def test_translate_output_respects_umask(tmp_path, monkeypatch):
+    import os
+
+    monkeypatch.setattr(config, "PROJECTS_DIR", tmp_path / "projects")
+    src = tmp_path / "ep.en.srt"
+    _one_line_srt(src)
+    old = os.umask(0o022)
+    try:
+        result = pipeline.translate_subtitle(
+            src, provider="identity", interactive=False, project="P", fmt="srt"
+        )
+    finally:
+        os.umask(old)
+    assert result.output_path.stat().st_mode & 0o777 == 0o644
+
+
+# --- batch skip is a typed error, not a message match (#10) --------------------------
+
+
+def test_batch_skip_uses_typed_error_not_message_match(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "PROJECTS_DIR", tmp_path / "projects")
+    _one_line_srt(tmp_path / "ep01.en.srt")
+
+    # A PipelineError that merely mentions "already exists" for an unrelated reason must be
+    # recorded as failed, not silently skipped (the old substring heuristic got this wrong).
+    def misleading(path, **kwargs):
+        raise pipeline.PipelineError("a conflicting term already exists in the glossary")
+
+    monkeypatch.setattr(pipeline, "translate_subtitle", misleading)
+    result = pipeline.batch_translate(
+        tmp_path,
+        globs=("*.srt",),
+        provider="identity",
+        target="es-latam",
+        fmt="srt",
+        interactive=False,
+        project="P",
+    )
+    assert result.n_skipped == 0 and result.n_failed == 1
+
+    # Only the typed OutputExistsError counts as a skip.
+    def already(path, **kwargs):
+        raise pipeline.OutputExistsError("Output already exists: x. Use --force to overwrite.")
+
+    monkeypatch.setattr(pipeline, "translate_subtitle", already)
+    result = pipeline.batch_translate(
+        tmp_path,
+        globs=("*.srt",),
+        provider="identity",
+        target="es-latam",
+        fmt="srt",
+        interactive=False,
+        project="P",
+    )
+    assert result.n_skipped == 1 and result.n_failed == 0
+
+
+# --- checkpoint signature keys on the effective model, not the --model flag (#2) ------
+
+
+def test_checkpoint_signature_includes_effective_model(tmp_path, monkeypatch):
+    import json
+    import types
+
+    monkeypatch.setattr(config, "PROJECTS_DIR", tmp_path / "projects")
+    source = tmp_path / "ep.en.srt"
+    _one_line_srt(source)
+
+    prov = _FlakyProvider()
+    prov.runner = types.SimpleNamespace(model="claude-opus-4-8")  # the runner's default model
+    monkeypatch.setattr(pipeline, "make_provider", lambda *a, **k: prov)
+
+    # --model omitted; the signature must still pin the model the runner actually used.
+    pipeline.translate_subtitle(
+        source, provider="claude", interactive=False, project="P", fmt="srt"
+    )
+
+    from translate_subs.workflows.support import episode_key
+
+    cp = tmp_path / "projects" / "P" / "es" / episode_key(source) / "translations.checkpoint.json"
+    signature = json.loads(cp.read_text())["signature"]
+    assert signature == "claude|claude-opus-4-8|"

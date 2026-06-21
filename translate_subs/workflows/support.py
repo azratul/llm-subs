@@ -17,6 +17,7 @@ from translate_subs.ai.provider import (
     IdentityProvider,
     TranslationProvider,
 )
+from translate_subs.fsutil import default_file_mode
 from translate_subs.io.source_resolver import ResolvedSource
 from translate_subs.naming import base_stem, lang_code
 from translate_subs.subs import document
@@ -113,6 +114,7 @@ def atomic_save(
             raise PipelineError(
                 "Output failed validation, nothing written: " + "; ".join(result.errors)
             )
+        os.chmod(tmp, default_file_mode())
         os.replace(tmp, out_path)
         return result
     except BaseException:

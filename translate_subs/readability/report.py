@@ -12,6 +12,7 @@ class ReadabilityEntry:
     current: str
     compact: str | None = None
     residual: list[str] = field(default_factory=list)
+    rejected: bool = False  # compaction was produced but not worth applying (no improvement)
 
 
 def _flat(text: str) -> str:
@@ -34,6 +35,8 @@ def render_markdown(episode: str, entries: list[ReadabilityEntry]) -> str:
             out.append(f"### Line {e.id}")
             out.append(f"Current: {_flat(e.current)}")
             out.append(f"Compact: {_flat(e.compact or '')}")
+            if e.rejected:
+                out.append("_Not applied: no readability improvement over the original._")
             if e.residual:
                 out.append(f"_Still over: {', '.join(e.residual)}_")
             out.append("")

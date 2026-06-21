@@ -82,6 +82,33 @@ def test_safe_policy_gender_requires_confirmed_speaker():
     assert findings[3].auto is False  # an empty replacement is never safe
 
 
+def test_safe_policy_glossary_requires_rendering_in_suggestion():
+    lines = [_line("0001", "a", "x"), _line("0002", "b", "y")]
+    findings = [
+        # Correct glossary fix: the suggestion actually carries the expected rendering.
+        Finding(
+            id="0001",
+            kind="glossary",
+            current="usa la katana",
+            suggested="usa la Espada Sagrada",
+            message="",
+            auto=True,
+        ),
+        # Mislabeled as glossary but the suggestion has no glossary term — must be demoted.
+        Finding(
+            id="0002",
+            kind="glossary",
+            current="hola",
+            suggested="qué tal",
+            message="",
+            auto=True,
+        ),
+    ]
+    apply_safe_policy(findings, lines, {}, {"Sword": "Espada Sagrada"})
+    assert findings[0].auto is True
+    assert findings[1].auto is False
+
+
 def test_render_markdown_splits_warnings_and_fixes():
     report = ReviewReport(
         episode="ep01",

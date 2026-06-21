@@ -50,3 +50,32 @@ def exceeds(metrics: LineMetrics, limits: ReadabilityLimits) -> list[str]:
     if metrics.cps > limits.max_chars_per_second:
         reasons.append(f"too fast ({metrics.cps:.1f} > {limits.max_chars_per_second} cps)")
     return reasons
+
+
+def violations(metrics: LineMetrics, limits: ReadabilityLimits) -> set[str]:
+    """The set of limit axes a line breaks, as stable keys (for comparing two versions)."""
+    broken = set()
+    if metrics.max_line_chars > limits.max_chars_per_line:
+        broken.add("line_length")
+    if metrics.n_lines > limits.max_lines:
+        broken.add("line_count")
+    if metrics.cps > limits.max_chars_per_second:
+        broken.add("cps")
+    return broken
+
+
+def is_safe_improvement(
+    original: LineMetrics, candidate: LineMetrics, limits: ReadabilityLimits
+) -> bool:
+    """Whether replacing `original` with `candidate` is worth writing.
+
+    Accept a candidate that is fully within the limits, or one that — while still over — does
+    not introduce a *new* kind of violation and is genuinely shorter. A compaction that adds a
+    violation (e.g. splits one long line into three) or grows the text is rejected so `--apply`
+    never makes a subtitle worse.
+    """
+    candidate_broken = violations(candidate, limits)
+    if not candidate_broken:
+        return True
+    original_broken = violations(original, limits)
+    return candidate_broken <= original_broken and candidate.chars_total < original.chars_total

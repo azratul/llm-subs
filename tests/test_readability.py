@@ -103,6 +103,37 @@ def test_tighten_applies_compaction(tmp_path, monkeypatch):
     assert reloaded.events[1].plaintext == "Hola."
 
 
+def test_is_safe_improvement_accepts_and_rejects():
+    from translate_subs.readability.metrics import is_safe_improvement
+
+    limits = ReadabilityLimits()
+    original = measure("x" * 50, 0, 5000)  # too long
+    assert is_safe_improvement(original, measure("Corto.", 0, 5000), limits)  # now compliant
+    assert is_safe_improvement(original, measure("x" * 45, 0, 5000), limits)  # shorter, same axis
+    assert not is_safe_improvement(original, measure("x" * 60, 0, 5000), limits)  # longer
+    # Splitting one over-long line into three introduces a new (line_count) violation.
+    assert not is_safe_improvement(original, measure("a\nb\nc", 0, 5000), limits)
+
+
+def test_tighten_rejects_compaction_that_does_not_improve(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "PROJECTS_DIR", tmp_path / "projects")
+
+    subs = pysubs2.SSAFile()
+    subs.events.append(pysubs2.SSAEvent(start=0, end=5000, text="x" * 50))  # too long
+    srt = tmp_path / "ep01.es.srt"
+    subs.save(str(srt), format_="srt")
+
+    # The "compaction" is even longer — writing it would make the line worse.
+    result = pipeline.tighten_subtitle(
+        srt, project="Serie", apply=True, runner=lambda _: json.dumps({"0001": "y" * 60})
+    )
+
+    assert result.n_compacted == 1
+    assert result.n_applied == 0  # not written
+    assert pysubs2.load(str(srt)).events[0].plaintext == "x" * 50  # original kept intact
+    assert "Not applied" in result.report_path.read_text("utf-8")
+
+
 def test_tighten_apply_preserves_ass_leading_tags(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "PROJECTS_DIR", tmp_path / "projects")
 

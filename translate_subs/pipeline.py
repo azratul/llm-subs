@@ -46,6 +46,7 @@ from translate_subs.workflows.models import BatchItem as _BatchItem
 from translate_subs.workflows.models import (
     ConflictChoice as _ConflictChoice,
 )
+from translate_subs.workflows.models import OutputExistsError as _OutputExistsError
 from translate_subs.workflows.models import PipelineError as _PipelineError
 from translate_subs.workflows.quality import (
     review_translation as _review_translation,
@@ -94,6 +95,7 @@ from translate_subs.workflows.translation import (
 ConflictChoice = _ConflictChoice
 BatchItem = _BatchItem
 PipelineError = _PipelineError
+OutputExistsError = _OutputExistsError
 project_dir = _project_dir
 context_path = _context_path
 review_path = _review_path

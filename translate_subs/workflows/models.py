@@ -19,6 +19,14 @@ class PipelineError(Exception):
     pass
 
 
+class OutputExistsError(PipelineError):
+    """Raised when an output file already exists and `--force` was not given.
+
+    A distinct type so `batch` can record the episode as *skipped* (not *failed*) without
+    pattern-matching the error message.
+    """
+
+
 @dataclass
 class TranslateResult:
     source: ResolvedSource

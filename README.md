@@ -54,6 +54,18 @@ tracks under `$XDG_CACHE_HOME/translate-subs`. Override the whole data root with
 `export TRANSLATE_SUBS_HOME=/path/to/repo/data`). Translated subtitles are written **next to the
 input file** by default (`--out-dir`/`--output` to change that), not under the data dir.
 
+### From a tagged release
+
+Each GitHub release attaches a built wheel and sdist. To install a specific version without a
+clone (replace `vX.Y.Z` with the release tag):
+
+```bash
+# Pin a release tag straight from the repository:
+uv tool install "git+https://github.com/azratul/translate-subs@vX.Y.Z"
+# or from the attached wheel:
+pipx install "https://github.com/azratul/translate-subs/releases/download/vX.Y.Z/translate_subs-X.Y.Z-py3-none-any.whl"
+```
+
 ### For development (from a checkout)
 
 ```bash

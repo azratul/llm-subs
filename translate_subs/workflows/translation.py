@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from pathlib import Path
-from typing import Literal
 
 from translate_subs import config
 from translate_subs.ai.analysis import EpisodeContext, source_digest
@@ -35,7 +34,13 @@ from translate_subs.subs.validator import (
     validate_file,
     validate_translations,
 )
-from translate_subs.workflows.models import BatchItem, BatchResult, PipelineError, TranslateResult
+from translate_subs.workflows.models import (
+    BatchItem,
+    BatchResult,
+    OutputExistsError,
+    PipelineError,
+    TranslateResult,
+)
 from translate_subs.workflows.support import (
     atomic_save,
     context_path,
@@ -109,7 +114,7 @@ def translate_subtitle(
             "Choose a different --output/--out-dir or --target."
         )
     if out_file.exists() and not force:
-        raise PipelineError(f"Output already exists: {out_file}. Use --force to overwrite.")
+        raise OutputExistsError(f"Output already exists: {out_file}. Use --force to overwrite.")
 
     project_name, episode_name = project_episode(source, project)
     jobs_dir = episode_dir(project_name, target, episode_name) / "jobs"
@@ -145,7 +150,12 @@ def translate_subtitle(
         max_retries=max_retries,
     )
     if provider in CLI_PROVIDERS:
-        signature = f"{provider}|{model or ''}|{reasoning or ''}"
+        # Key the checkpoint on the model the runner will actually use, not the (possibly unset)
+        # --model flag: when --model is omitted the runner falls back to its own default (e.g.
+        # claude-opus-4-8), and a later change to that default must not silently reuse blocks
+        # translated by the old one.
+        effective_model = getattr(getattr(translation_provider, "runner", None), "model", None)
+        signature = f"{provider}|{effective_model or model or ''}|{reasoning or ''}"
         checkpoint_file = jobs_dir.parent / CHECKPOINT_FILE
         checkpoint = (
             BlockCheckpoint.load(checkpoint_file, signature)
@@ -233,14 +243,9 @@ def batch_translate(
             on_episode(index, total, path)
         try:
             translated = translate_fn(path, **translate_kwargs)
-        except PipelineError as exc:
-            status: Literal["skipped", "failed"] = (
-                "skipped" if "already exists" in str(exc) else "failed"
-            )
-            result.items.append(
-                BatchItem(path, status, error=None if status == "skipped" else str(exc))
-            )
-        except _EXPECTED_PIPELINE_ERRORS as exc:
+        except OutputExistsError:
+            result.items.append(BatchItem(path, "skipped", error=None))
+        except (PipelineError, *_EXPECTED_PIPELINE_ERRORS) as exc:
             result.items.append(BatchItem(path, "failed", error=str(exc)))
         else:
             result.items.append(

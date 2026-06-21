@@ -27,6 +27,22 @@ move these entries under a dated version heading.
   recorded by `analyze` but previously ignored when translating.
 
 ### Fixed
+- Generated files (translated subtitles, review/readability reports, memory and checkpoints) now
+  respect the process umask instead of always being created `0600`, so a media server or another
+  user (Jellyfin/Plex) can read the output.
+- The per-block translation checkpoint is keyed on the model the runner actually used, not just the
+  `--model` flag: when `--model` is omitted the runner's own default (e.g. `claude-opus-4-8`) goes
+  into the signature, so changing that default later re-translates instead of reusing blocks from
+  the previous model.
+- `review --apply` auto-applies a `glossary` fix only when the suggested line actually contains the
+  expected glossary rendering — a deterministic check, rather than trusting the model's `auto_safe`
+  label on a fix that carries no glossary term.
+- `tighten --apply` writes a compaction only when it is a real readability improvement; one that
+  introduces a new limit violation (e.g. splits a long line into three) or grows the text is
+  reported but left out of the file, so `--apply` can never make a subtitle worse.
+- `batch` records a pre-existing output as *skipped* through a typed `OutputExistsError` instead of
+  matching `"already exists"` in the error text, so an unrelated error that happens to contain that
+  phrase is correctly counted as *failed*.
 - `batch --no-resume` is now honoured: the flag was defined but never forwarded to each episode's
   translation, so checkpoints were always reused.
 - `translate`/`batch` refuse to write the output over the file they are reading from (a misaimed
