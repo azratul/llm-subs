@@ -178,7 +178,7 @@ def test_review_translation_applies_only_safe_fixes(tmp_path, monkeypatch):
     translated_path = tmp_path / "ep01.es.srt"
     translated.save(str(translated_path), format_="srt")
 
-    project_dir = tmp_path / "projects" / "Serie"
+    project_dir = tmp_path / "projects" / "Serie" / "es"  # per-target memory root (es-latam)
     project_dir.mkdir(parents=True)
     (project_dir / "memory.json").write_text(
         json.dumps({"characters": [{"name": "Yumi", "gender": "female"}]}), encoding="utf-8"

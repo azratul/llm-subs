@@ -12,9 +12,11 @@ move these entries under a dated version heading.
 ### Added
 - Per-target memory layout: series memory, glossary, style guide, episode context and checkpoints
   now live under `<project>/<lang>`, so a glossary built for one target language no longer leaks
-  into a different target. Existing installs (files directly under `<project>/`) keep working for
-  the default target via a read/write fallback, so nothing is orphaned; a `migrate-memory` command
-  to relocate them is planned. `compact-memory`/`resolve-conflicts`/`update-memory` gain `--target`.
+  into a different target. `compact-memory`/`resolve-conflicts`/`update-memory` gain `--target`.
+- Episodes are disambiguated by source folder: the per-episode directory key is the source stem
+  plus a short hash of its containing directory, so two same-named files in different folders (e.g.
+  `Season 1/Episode 01` and `Season 2/Episode 01`) under one project no longer share context or
+  translation checkpoints; the same file still maps to the same directory so resume is stable.
 - Stale-context detection: `analyze` records a fingerprint of the analyzed subtitle in
   `episode.context.json`; `translate` and `review` warn (never block) when the subtitle has changed
   since it was analyzed. Legacy context files without the fingerprint are not flagged.

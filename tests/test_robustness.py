@@ -771,7 +771,10 @@ def test_translate_resumes_after_block_failure(tmp_path, monkeypatch):
     with pytest.raises(ProviderError):
         pipeline.translate_subtitle(source, provider="claude", interactive=False, project="P")
 
-    checkpoint = tmp_path / "projects" / "P" / "es" / "ep" / "translations.checkpoint.json"
+    from translate_subs.workflows.support import episode_key
+
+    episode = episode_key(source)
+    checkpoint = tmp_path / "projects" / "P" / "es" / episode / "translations.checkpoint.json"
     assert checkpoint.exists()
 
     # Second run: a healthy provider should only need to translate the missing block 2.
@@ -1055,19 +1058,21 @@ def test_memory_root_segments_by_target(tmp_path, monkeypatch):
     assert es != fr  # a French run can't inherit the Spanish glossary
 
 
-def test_memory_root_reads_legacy_layout_for_default_target(tmp_path, monkeypatch):
-    from translate_subs.workflows.support import memory_root, project_dir
+def test_episode_key_disambiguates_same_name_in_different_folders(tmp_path):
+    from translate_subs.workflows.support import episode_key
 
-    monkeypatch.setattr(config, "PROJECTS_DIR", tmp_path / "projects")
-    # Simulate a pre-upgrade install: memory.json sits directly under the project dir.
-    legacy = project_dir("Show")
-    legacy.mkdir(parents=True)
-    (legacy / "memory.json").write_text("{}", encoding="utf-8")
+    (tmp_path / "S1").mkdir()
+    (tmp_path / "S2").mkdir()
+    e1 = tmp_path / "S1" / "Episode 01.mkv"
+    e2 = tmp_path / "S2" / "Episode 01.mkv"
+    e1.write_bytes(b"")
+    e2.write_bytes(b"")
 
-    # Default target keeps using the legacy location (no orphaning) until migrated...
-    assert memory_root("Show", "es-latam") == legacy
-    # ...but a different target gets its own fresh per-language dir.
-    assert memory_root("Show", "fr").name == "fr"
+    # Same stem, different folders -> different episode dirs (no shared context/checkpoint).
+    assert episode_key(e1) != episode_key(e2)
+    assert episode_key(e1).startswith("Episode 01 [")
+    # Stable: the same file always maps to the same key (so resume works).
+    assert episode_key(e1) == episode_key(tmp_path / "S1" / "Episode 01.mkv")
 
 
 def test_translate_does_not_leak_glossary_across_targets(tmp_path, monkeypatch):

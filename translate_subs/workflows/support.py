@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import os
 import tempfile
 from collections.abc import Callable
@@ -51,7 +52,7 @@ def make_ai_runner(provider: str, *, model: str | None = None, reasoning: str | 
 
 def project_episode(source: ResolvedSource, project: str | None) -> tuple[str, str]:
     project_name = project or source.origin.parent.name or "default"
-    return project_name, base_stem(source.origin)
+    return project_name, episode_key(source.origin)
 
 
 def project_dir(project: str) -> Path:
@@ -67,23 +68,25 @@ def project_dir(project: str) -> Path:
 
 
 def memory_root(project: str, target: str) -> Path:
-    """Per-target memory directory for a project, with read-fallback to the legacy layout.
+    """Per-target memory directory: ``<projects>/<project>/<lang>``.
 
     The series memory (glossary, style guide, episode context, checkpoints) is target-specific:
-    a Spanish glossary must not steer a later French run. New state lives under
-    ``<projects>/<project>/<lang>`` (e.g. ``.../es``). Installs that predate this kept their
-    files directly under ``<projects>/<project>``; for the default target we keep using that
-    legacy location while it holds data (writes land there too), so an upgrade never orphans
-    accumulated memory — the `migrate-memory` command relocates it on demand.
+    a Spanish glossary must not steer a later French run, so each target gets its own subtree.
     """
-    base = project_dir(project)
-    per_target = base / lang_code(target)
-    if per_target.exists():
-        return per_target
-    legacy_has_data = (base / "memory.json").exists() or (base / "glossary.json").exists()
-    if lang_code(target) == lang_code(config.DEFAULT_TARGET) and legacy_has_data:
-        return base
-    return per_target
+    return project_dir(project) / lang_code(target)
+
+
+def episode_key(origin: Path) -> str:
+    """Stable, collision-free episode directory name for a source file.
+
+    The episode name is the source stem (without extension or language suffix), suffixed with a
+    short hash of its containing directory. Two same-named files in different folders (e.g.
+    ``Season 1/Episode 01`` and ``Season 2/Episode 01``) under one project therefore get distinct
+    directories instead of sharing context/checkpoint, while the same file always maps to the same
+    directory (so resume works).
+    """
+    parent_hash = hashlib.sha256(str(origin.resolve().parent).encode("utf-8")).hexdigest()[:6]
+    return f"{base_stem(origin)} [{parent_hash}]"
 
 
 def atomic_save(

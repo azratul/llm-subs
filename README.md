@@ -253,7 +253,7 @@ scripts; the file is still written so you can inspect it), and `--no-resume` (se
 ### Resume, caching and progress
 
 Translating a full episode is dozens of slow LLM calls. Each block's result is checkpointed to
-`<project>/<episode>/translations.checkpoint.json` as soon as it returns, keyed by a hash of
+`<project>/<lang>/<episode>/translations.checkpoint.json` as soon as it returns, keyed by a hash of
 everything that steers that block — target, rules, its lines **and the before/after context lines
 sent with it**. So:
 
@@ -311,8 +311,8 @@ setting, then the tool's built-in default. The auxiliary commands (`analyze`, `r
 `--project "Series Name"` identifies the memory shared across episodes. It is not an input
 directory, it does not discover files, and it does not trigger analysis automatically.
 
-- `analyze --project ...` creates or updates `data/projects/<series>/`, the episode's context
-  card, the character memory, and the glossary.
+- `analyze --project ...` creates or updates `data/projects/<series>/<target-lang>/`, the
+  episode's context card, the character memory, and the glossary.
 - `translate --project ...` only loads that memory and context if they already exist.
 - `review --project ...` uses the same information to review the translation.
 
@@ -330,12 +330,18 @@ uv run translate-subs translate episode.mkv \
 
 ## Memory and conflicts
 
-The memory created by `analyze` lives in `data/projects/<series>/`:
+The memory created by `analyze` lives under `data/projects/<series>/<target-lang>/` (segmented by
+target language, so a glossary built for one language never steers another):
 
 - `memory.json` — characters (name, gender, style, relationships).
 - `glossary.json` — fixed terms (organizations, places, techniques, titles…).
 - `style_guide.json` — locale/variant, honorifics, tone, formality policy.
 - `conflicts.json` — conflicts flagged for manual review.
+
+`compact-memory`, `resolve-conflicts` and `update-memory` take `--target` to choose which
+language's memory to act on (default `es-latam`). Per-episode state (context, checkpoint, reports)
+lives in a subdirectory keyed by the source file's name **and** a short hash of its folder, so two
+same-named episodes in different season folders never share context or checkpoints.
 
 These persisted files use strict, versioned schemas. Legacy unversioned files are still read for
 compatibility; malformed files fail at load time with the offending path instead of surfacing
