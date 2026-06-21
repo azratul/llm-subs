@@ -4,10 +4,11 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/), and the project aims to follow
 [Semantic Versioning](https://semver.org/).
 
-Nothing has been released yet; everything below is unreleased. The first tagged release will
-move these entries under a dated version heading.
-
 ## [Unreleased]
+
+## [0.1.0] - 2026-06-21
+
+First tagged release. Everything below shipped in 0.1.0.
 
 ### Added
 - Per-target memory layout: series memory, glossary, style guide, episode context and checkpoints
@@ -195,3 +196,6 @@ move these entries under a dated version heading.
 - Stricter memory schema: character `gender` is a `Literal`, models reject unknown keys
   (`extra="forbid"`) and validate on assignment; unexpected LLM gender values fold to `unknown`
   instead of entering memory.
+
+[Unreleased]: https://github.com/azratul/translate-subs/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/azratul/translate-subs/releases/tag/v0.1.0

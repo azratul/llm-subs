@@ -1,5 +1,10 @@
 # translate-subs
 
+[![CI](https://github.com/azratul/translate-subs/actions/workflows/ci.yml/badge.svg)](https://github.com/azratul/translate-subs/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/azratul/translate-subs?sort=semver)](https://github.com/azratul/translate-subs/releases)
+[![Python](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/)
+[![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue)](LICENSE)
+
 Contextual subtitle translator **from any language to any language** using an LLM through its
 CLI (`claude`, `codex`, `gemini`, `opencode`) or a model API (`ollama`, `litellm`). Unlike
 line-by-line machine translation, it leverages **context**: character gender,
