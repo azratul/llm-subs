@@ -194,7 +194,11 @@ def translate_subtitle(
         flatten_overlaps(subs)
 
     def validate_rendered(path: Path) -> ValidationResult:
-        return validate_file(path) if fmt == "srt" else validate_output_fn(path, units)
+        if fmt == "srt":
+            return validate_file(path)
+        # .ass output comes from these same units, so also assert each event kept its source
+        # style and whole-line leading override block (position/colour/alignment).
+        return validate_output_fn(path, units, check_fidelity=True)
 
     validation = atomic_save(subs, out_file, fmt=fmt, validate=validate_rendered)
     assert validation is not None

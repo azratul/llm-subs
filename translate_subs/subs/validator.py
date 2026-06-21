@@ -15,6 +15,14 @@ from translate_subs.domain.models import TranslatableUnit
 _OVERRIDE_BLOCK_RE = re.compile(r"\{([^}]*)\}")
 _BASIC_TAGS_RE = re.compile(r"^(\\[ib][01])+$")
 
+# Individual override commands inside a leading block, e.g. {\an8\pos(1,2)} -> \an8, \pos(1,2).
+# Checked by substring so the fidelity check tolerates pysubs2 re-bracketing/merging on round-trip.
+_TAG_TOKEN_RE = re.compile(r"\\[^\\{}]+")
+
+
+def _lead_tokens(lead_tags: str) -> list[str]:
+    return _TAG_TOKEN_RE.findall(lead_tags)
+
 
 def _has_nonbasic_markup(text: str) -> bool:
     return any(not _BASIC_TAGS_RE.match(block) for block in _OVERRIDE_BLOCK_RE.findall(text))
@@ -93,8 +101,20 @@ def validate_file(path: str | Path) -> ValidationResult:
     return ValidationResult(ok=not errors, errors=errors, warnings=warnings)
 
 
-def validate_output(srt_path: str | Path, units: list[TranslatableUnit]) -> ValidationResult:
-    """Reopen the resulting file and check minimal structural integrity."""
+def validate_output(
+    srt_path: str | Path,
+    units: list[TranslatableUnit],
+    *,
+    check_fidelity: bool = False,
+) -> ValidationResult:
+    """Reopen the resulting file and check minimal structural integrity.
+
+    `check_fidelity` (for the `.ass` translate path, where the output events come from the same
+    units) additionally verifies that each event kept its source style and its whole-line leading
+    override block (`{\\an8\\pos(..)}`), so a silently dropped position/colour/alignment is caught.
+    It is off by default because `review` validates a *translated* file against *source* units,
+    where style/lead-tag differences between the two files are legitimate.
+    """
     errors: list[str] = []
     warnings: list[str] = []
 
@@ -125,5 +145,31 @@ def validate_output(srt_path: str | Path, units: list[TranslatableUnit]) -> Vali
     empty = sum(1 for e in events if not e.plaintext.strip())
     if empty:
         warnings.append(f"{empty} events ended up empty in the output")
+
+    if (
+        check_fidelity
+        and len(events) == len(units)
+        and Path(srt_path).suffix.lower()
+        in (
+            ".ass",
+            ".ssa",
+        )
+    ):
+        style_lost = [
+            unit.id for unit, event in zip(units, events, strict=False) if event.style != unit.style
+        ]
+        if style_lost:
+            errors.append(f"{len(style_lost)} events lost their style (e.g. {style_lost[:5]})")
+
+        tags_lost = [
+            unit.id
+            for unit, event in zip(units, events, strict=False)
+            if (tokens := _lead_tokens(unit.lead_tags))
+            and any(token not in (event.text or "") for token in tokens)
+        ]
+        if tags_lost:
+            errors.append(
+                f"{len(tags_lost)} events lost their leading override tags (e.g. {tags_lost[:5]})"
+            )
 
     return ValidationResult(ok=not errors, errors=errors, warnings=warnings)

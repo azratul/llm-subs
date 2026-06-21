@@ -84,6 +84,35 @@ def test_round_trip_to_ass_preserves_positioning(tmp_path):
     assert all(r"\fad" not in t and r"\k" not in t for t in texts)
 
 
+def test_ass_fidelity_check_flags_lost_style_and_tags(tmp_path):
+    import pysubs2
+
+    subs = _load_complex(tmp_path)
+    units = extract_units(subs)
+    apply_translations(subs, units, _identity_jobs(units))
+    prune_to_units(subs, units)
+    out = tmp_path / "out.ass"
+    document.save(subs, out, fmt="ass")
+
+    # A faithful round-trip passes even the strict fidelity check.
+    assert validate_output(out, units, check_fidelity=True).ok
+
+    # Tamper: drop every leading override block and rename all styles.
+    tampered = pysubs2.load(str(out))
+    for event in tampered.events:
+        event.text = event.plaintext  # removes the {\an8\pos(..)} lead block
+        event.style = "Renamed"
+    bad = tmp_path / "bad.ass"
+    tampered.save(str(bad))
+
+    # Review mode (fidelity off) only checks structure, so the tampered file still "passes".
+    assert validate_output(bad, units).ok
+    strict = validate_output(bad, units, check_fidelity=True)
+    assert not strict.ok
+    assert any("style" in e for e in strict.errors)
+    assert any("leading override" in e for e in strict.errors)
+
+
 def test_overlapping_note_merges_in_srt(tmp_path):
     subs = _load_complex(tmp_path)
     units = extract_units(subs)

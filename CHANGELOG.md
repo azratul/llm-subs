@@ -38,6 +38,11 @@ move these entries under a dated version heading.
   external plugins, and never `--dangerously-skip-permissions`).
 
 ### Fixed
+- `.ass` output validation now also checks fidelity: each event must keep its source style and its
+  whole-line leading override block (`{\an8\pos(..)}`), so a silently dropped position/colour/
+  alignment fails validation and nothing is written (the check is scoped to the translate path,
+  where output events come from the same units; `review`'s translated-vs-source comparison is
+  unaffected).
 - The `--target` can no longer steer a write outside its directory: it is validated as a language
   tag up front (path separators, `..` and empty values are rejected), the output-filename language
   code is reduced to alphanumerics, and `translate` additionally asserts the resolved output stays
