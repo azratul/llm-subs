@@ -136,6 +136,42 @@ def test_translate_force_required_to_overwrite(tmp_path, monkeypatch):
     assert again.output_path.exists()
 
 
+# --- target sanitisation / path-escape ------------------------------------------------
+
+
+def test_lang_code_strips_path_characters():
+    from translate_subs.naming import lang_code
+
+    assert lang_code("es-latam") == "es"
+    assert lang_code("pt-BR") == "pt"
+    # A hostile target can't inject path components into `<base>.<lang>.<fmt>`.
+    assert "/" not in lang_code("../../tmp/x")
+    assert lang_code("../../tmp/x") == "tmpx"
+
+
+def test_validate_target_accepts_tags_and_rejects_paths():
+    from translate_subs.naming import validate_target
+
+    for good in ("es-latam", "pt-BR", "zh-Hans", "fr"):
+        assert validate_target(good) == good
+    for bad in ("../../etc", "es/latam", "", "..", r"a\b", "a b"):
+        with pytest.raises(ValueError, match="target"):
+            validate_target(bad)
+
+
+def test_translate_rejects_path_like_target(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "PROJECTS_DIR", tmp_path / "projects")
+    src = pysubs2.SSAFile()
+    src.events.append(pysubs2.SSAEvent(start=0, end=2000, text="Hello."))
+    source = tmp_path / "ep.en.srt"
+    src.save(str(source), format_="srt")
+
+    with pytest.raises(pipeline.PipelineError, match="target"):
+        pipeline.translate_subtitle(
+            source, target="../../escape", provider="identity", interactive=False, project="P"
+        )
+
+
 # --- review --apply guard on a non-1:1 (merged .srt) target -------------------------
 
 

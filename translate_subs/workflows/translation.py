@@ -25,6 +25,7 @@ from translate_subs.naming import (
     SUPPORTED_FORMATS,
     lang_code,
     output_path,
+    validate_target,
 )
 from translate_subs.subs import document
 from translate_subs.subs.extractor import extract_units
@@ -88,6 +89,10 @@ def translate_subtitle(
         raise PipelineError(
             f"Unsupported format '{fmt}'. Use one of: {', '.join(SUPPORTED_FORMATS)}."
         )
+    try:
+        validate_target(target)
+    except ValueError as exc:
+        raise PipelineError(str(exc)) from exc
     source = resolve_source_fn(
         input_path,
         work_dir=config.WORK_DIR,
@@ -106,6 +111,13 @@ def translate_subtitle(
         out_file = Path(output).with_suffix(f".{fmt}")
     else:
         out_file = output_path(source.origin, fmt=fmt, out_dir=out_dir, lang=lang_code(target))
+        # Defence in depth: the filename is derived from the (now alnum-only) target, so it must
+        # stay a single component inside the intended directory and can't escape via the language.
+        intended = (
+            Path(out_dir).resolve() if out_dir is not None else source.origin.resolve().parent
+        )
+        if out_file.resolve().parent != intended:
+            raise PipelineError(f"Refusing to write outside the output directory: {out_file}.")
     # Never write over the file we are reading from: a misaimed --output (or a same-name source)
     # would otherwise destroy the original subtitle, even with --force.
     if _same_path(out_file, source.subtitle_path) or _same_path(out_file, source.origin):

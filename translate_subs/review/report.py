@@ -11,8 +11,14 @@ def _label(f: Finding) -> str:
     return f"Line {f.id} ({f.kind})"
 
 
-def render_markdown(report: ReviewReport) -> str:
+def render_markdown(report: ReviewReport, manifest: dict[str, str] | None = None) -> str:
     out = [f"# Review {report.episode}", ""]
+
+    # Provenance: which files/target/fingerprint this report was generated from, so a report left
+    # behind from an earlier run can be told apart from one matching the current subtitle.
+    if manifest:
+        out += [f"- {key}: {value}" for key, value in manifest.items()]
+        out.append("")
 
     out.append("## Warnings")
     warnings = report.warnings()

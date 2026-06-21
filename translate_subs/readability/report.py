@@ -19,8 +19,16 @@ def _flat(text: str) -> str:
     return text.replace("\n", " / ")
 
 
-def render_markdown(episode: str, entries: list[ReadabilityEntry]) -> str:
-    out = [f"# Readability {episode}", "", f"## Flagged ({len(entries)})"]
+def render_markdown(
+    episode: str, entries: list[ReadabilityEntry], manifest: dict[str, str] | None = None
+) -> str:
+    out = [f"# Readability {episode}", ""]
+    # Provenance: ties this report to the file/target/fingerprint it was generated from, so a
+    # stale report from an earlier run is distinguishable from one matching the current subtitle.
+    if manifest:
+        out += [f"- {key}: {value}" for key, value in manifest.items()]
+        out.append("")
+    out.append(f"## Flagged ({len(entries)})")
     if entries:
         for e in entries:
             out.append(f"- Line {e.id}: {', '.join(e.reasons)}")

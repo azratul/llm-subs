@@ -75,6 +75,31 @@ def test_compact_lines_uses_runner():
     assert "[0001]" in seen["prompt"]
 
 
+def test_compact_lines_chunks_into_blocks():
+    flagged = [
+        FlaggedLine(
+            id=f"{i:04d}",
+            event_index=i,
+            text="x" * 60,
+            metrics=measure("x" * 60, 0, 2000),
+            reasons=["line too long"],
+        )
+        for i in range(95)
+    ]
+    calls = []
+
+    def runner(prompt: str) -> str:
+        calls.append(prompt)
+        import re
+
+        ids = re.findall(r"\[(\d{4})\]", prompt)
+        return json.dumps({i: "Corto." for i in ids})
+
+    out = compact_lines(flagged, limits=ReadabilityLimits(), runner=runner, block_size=40)
+    assert len(calls) == 3  # 40 + 40 + 15
+    assert len(out) == 95  # every flagged line still compacted across the blocks
+
+
 def test_tighten_applies_compaction(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "PROJECTS_DIR", tmp_path / "projects")
 
@@ -138,6 +163,21 @@ def test_tighten_report_colocates_with_episode_state(tmp_path, monkeypatch):
     result = pipeline.tighten_subtitle(srt, target="es-latam", project="Show", use_llm=False)
     # The report uses the full target dir and the hashed episode key, matching translate/review.
     assert result.report_path == readability_path("Show", "es-latam", episode_key(srt))
+
+
+def test_tighten_report_includes_provenance_manifest(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "PROJECTS_DIR", tmp_path / "projects")
+
+    subs = pysubs2.SSAFile()
+    subs.events.append(pysubs2.SSAEvent(start=0, end=2000, text="x" * 60))
+    srt = tmp_path / "ep01.es.srt"
+    subs.save(str(srt), format_="srt")
+
+    result = pipeline.tighten_subtitle(srt, target="es-latam", project="Show", use_llm=False)
+    text = result.report_path.read_text("utf-8")
+    assert "Translated: ep01.es.srt" in text
+    assert "Target: es-latam" in text
+    assert "Content fingerprint:" in text
 
 
 def test_tighten_rejects_compaction_that_does_not_improve(tmp_path, monkeypatch):

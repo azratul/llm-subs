@@ -10,6 +10,7 @@ from __future__ import annotations
 import io
 import subprocess
 import urllib.error
+from pathlib import Path
 
 import pytest
 
@@ -55,6 +56,7 @@ def test_claude_cli_hardens_argv(monkeypatch):
 
     def fake_run(cmd, **kwargs):
         captured["cmd"] = cmd
+        captured["cwd"] = kwargs.get("cwd")
         return _completed(0, stdout='{"result": "ok", "is_error": false}')
 
     monkeypatch.setattr(claude_cli.shutil, "which", lambda name: "/usr/bin/claude")
@@ -68,6 +70,9 @@ def test_claude_cli_hardens_argv(monkeypatch):
     denied = cmd[cmd.index("--disallowedTools") + 1 :]
     for tool in ("Bash", "Edit", "Write", "Read", "WebFetch", "Task"):
         assert tool in denied
+    # Hardening: runs from an empty throwaway directory, not the user's real cwd.
+    cwd = captured["cwd"]
+    assert cwd is not None and Path(cwd).name.startswith("translate-subs-cwd-")
 
 
 def test_claude_cli_raises_when_binary_missing(monkeypatch):

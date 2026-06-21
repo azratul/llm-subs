@@ -13,6 +13,7 @@ import json
 import re
 import shutil
 import subprocess
+import tempfile
 from dataclasses import dataclass
 
 from translate_subs.ai.provider import ProviderError, backend_error_is_retryable
@@ -89,14 +90,18 @@ class ClaudeCli:
             "--disallowedTools",
             *_DENIED_TOOLS,
         ]
+        # Run from an empty throwaway directory: on top of the denied-tools sandbox, this keeps a
+        # crafted subtitle from steering the agent toward files in the user's real cwd.
         try:
-            proc = subprocess.run(
-                cmd,
-                input=prompt,
-                capture_output=True,
-                text=True,
-                timeout=self.timeout,
-            )
+            with tempfile.TemporaryDirectory(prefix="translate-subs-cwd-") as cwd:
+                proc = subprocess.run(
+                    cmd,
+                    input=prompt,
+                    capture_output=True,
+                    text=True,
+                    timeout=self.timeout,
+                    cwd=cwd,
+                )
         except subprocess.TimeoutExpired as exc:
             raise ProviderError(
                 f"`{self.binary}` timed out after {self.timeout}s",

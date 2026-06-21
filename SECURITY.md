@@ -40,6 +40,11 @@ Mitigations, in order of effectiveness:
   (`--strict-mcp-config`); `gemini` runs `--approval-mode plan` (read-only); `opencode` runs
   `--pure` (no external plugins) and is never passed `--dangerously-skip-permissions`. These are
   the CLIs' own flags, not OS isolation — keep each CLI updated and don't override them.
+- Each agent CLI is launched from an empty throwaway working directory, so even within its
+  read-only sandbox a crafted subtitle cannot point the agent at files in your real working
+  directory.
+- A `--target` is validated as a language tag before it touches the filesystem, so it cannot be
+  used to write a translation or report outside its intended directory.
 - The tool never hands the raw subtitle file to the backend: content is structured as
   `[ID] text` data lines, which reduces — but does not eliminate — injection risk.
 

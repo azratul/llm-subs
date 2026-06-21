@@ -13,11 +13,34 @@ from translate_subs.review.checks import (
 )
 from translate_subs.review.models import Finding, ReviewLine, ReviewReport
 from translate_subs.review.report import render_markdown
-from translate_subs.review.reviewer import apply_safe_policy, parse_findings
+from translate_subs.review.reviewer import apply_safe_policy, parse_findings, review_lines
 
 
 def _line(id, source, target, speaker=None, idx=0) -> ReviewLine:
     return ReviewLine(id=id, event_index=idx, speaker=speaker, source=source, target=target)
+
+
+def test_review_lines_chunks_into_blocks():
+    # More lines than one block: the runner must be called per block, not once for the lot.
+    lines = [_line(f"{i:04d}", f"src {i}", f"dst {i}") for i in range(95)]
+    calls = []
+
+    def runner(prompt: str) -> str:
+        calls.append(prompt)
+        return "[]"
+
+    review_lines(
+        lines,
+        glossary={},
+        genders={},
+        target="es-latam",
+        runner=runner,
+        block_size=40,
+    )
+    assert len(calls) == 3  # 40 + 40 + 15
+    # Each block only carries its own lines.
+    assert "[0000]" in calls[0] and "[0040]" not in calls[0]
+    assert "[0094]" in calls[2]
 
 
 def test_check_glossary_flags_missing_rendering():
@@ -282,6 +305,12 @@ def test_review_translation_applies_only_safe_fixes(tmp_path, monkeypatch):
     assert result.n_lines == 2
     assert result.n_applied == 1  # only the confirmed-gender fix
     assert result.report_path.exists()
+
+    report_text = result.report_path.read_text("utf-8")
+    assert "Source: ep01.en.ass" in report_text
+    assert "Translated: ep01.es.srt" in report_text
+    assert "Target: es-latam" in report_text
+    assert "Source fingerprint:" in report_text
 
     reloaded = pysubs2.load(str(translated_path))
     assert reloaded.events[0].plaintext == "Estoy cansada de esto."

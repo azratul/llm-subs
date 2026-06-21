@@ -26,8 +26,13 @@ def _run(binary_name: str, cmd: list[str], prompt: str | None, timeout: int) -> 
     if binary is None:
         raise ProviderError(f"`{binary_name}` CLI not found on PATH.", retryable=False)
     cmd = [binary, *cmd[1:]]
+    # Run from an empty throwaway directory: on top of each CLI's read-only sandbox, this keeps a
+    # crafted subtitle from nudging the agent toward whatever files sit in the user's real cwd.
     try:
-        proc = subprocess.run(cmd, input=prompt, capture_output=True, text=True, timeout=timeout)
+        with tempfile.TemporaryDirectory(prefix="translate-subs-cwd-") as cwd:
+            proc = subprocess.run(
+                cmd, input=prompt, capture_output=True, text=True, timeout=timeout, cwd=cwd
+            )
     except subprocess.TimeoutExpired as exc:
         raise ProviderError(
             f"`{binary_name}` timed out after {timeout}s",

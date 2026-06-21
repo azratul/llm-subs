@@ -20,6 +20,7 @@ from translate_subs.memory.merge import (
 )
 from translate_subs.memory.models import normalize_gender
 from translate_subs.memory.store import ProjectMemory, atomic_write_text
+from translate_subs.naming import validate_target
 from translate_subs.subs import document
 from translate_subs.subs.extractor import extract_units
 from translate_subs.workflows.models import (
@@ -87,6 +88,10 @@ def analyze_subtitle(
     resolve_source_fn,
     ai_runner_factory,
 ) -> AnalyzeResult:
+    try:
+        validate_target(target)
+    except ValueError as exc:
+        raise PipelineError(str(exc)) from exc
     source = resolve_source_fn(
         input_path,
         work_dir=config.WORK_DIR,

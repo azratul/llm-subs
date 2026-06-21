@@ -486,6 +486,8 @@ specific items follow.
   `--sandbox read-only`, `claude` denies every filesystem/exec/network/subagent tool and ignores
   all MCP servers (`--strict-mcp-config`), `gemini` uses `--approval-mode plan` (read-only), and
   `opencode` runs `--pure` (no external plugins) and is never given `--dangerously-skip-permissions`.
+  On top of those flags, each agent CLI is launched from an empty throwaway working directory, so a
+  crafted subtitle can't steer it toward files in your real cwd.
   Full OS isolation (containers/seccomp) is still out of scope; the strongest mitigation — use a
   local backend (`ollama`) for sensitive subtitles — is documented in [SECURITY.md](SECURITY.md).
 - **Token-aware block sizing and map-reduce analysis.** Blocks are sized by line count. Subtitle

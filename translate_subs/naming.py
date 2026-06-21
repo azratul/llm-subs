@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 # The full ISO 639-1 two-letter set, so a sidecar/output suffix in *any* language (e.g.
@@ -56,10 +57,30 @@ _LANG_TOKENS = ISO_639_1 | _LANG_SUFFIX_SPELLINGS
 SUPPORTED_FORMATS = ("ass", "srt")
 DEFAULT_FORMAT = "ass"
 
+# A well-formed target is a language tag: alphanumerics and dashes (e.g. `es-latam`, `pt-BR`,
+# `zh-Hans`). Anything else (path separators, `..`, empty) is rejected up front so a hostile
+# `--target` can't steer an on-disk path — output filename or memory directory — outside its root.
+_TARGET_RE = re.compile(r"[A-Za-z0-9-]+")
+
+
+def validate_target(target: str) -> str:
+    """Return the target unchanged if it is a valid language tag, else raise ``ValueError``."""
+    normalized = target.strip().replace("_", "-")
+    if not normalized or not _TARGET_RE.fullmatch(normalized) or not normalized.strip("-"):
+        raise ValueError(
+            f"Invalid target language {target!r}: use a language tag like 'es-latam' or 'pt-BR'."
+        )
+    return target
+
 
 def lang_code(target: str) -> str:
-    """Short filename code for a target like 'es-latam' -> 'es', 'fr-FR' -> 'fr'."""
-    code = target.strip().lower().replace("_", "-").split("-", 1)[0]
+    """Short filename code for a target like 'es-latam' -> 'es', 'fr-FR' -> 'fr'.
+
+    Alphanumerics only: even a hostile target (path separators, `..`) can never inject path
+    components into the output filename `<base>.<lang>.<fmt>`.
+    """
+    first = target.strip().lower().replace("_", "-").split("-", 1)[0]
+    code = "".join(ch for ch in first if ch.isalnum())
     return code or "out"
 
 

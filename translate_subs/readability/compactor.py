@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from collections.abc import Callable
 from dataclasses import dataclass
+from functools import partial
 
 from translate_subs.ai.claude_cli import extract_json
 from translate_subs.ai.provider import ProviderError, retry_provider_call
@@ -89,19 +90,31 @@ def parse_compactions(raw: str, requested: set[str]) -> dict[str, str]:
     return result
 
 
+# Flagged lines per compaction request, mirroring the translation/review block size: a whole
+# episode's worth of over-long lines in one prompt risks truncation and degrades the rewrite.
+COMPACTION_BLOCK_SIZE = 40
+
+
 def compact_lines(
     flagged: list[FlaggedLine],
     *,
     limits: ReadabilityLimits,
     runner: Runner,
     max_retries: int = 2,
+    block_size: int = COMPACTION_BLOCK_SIZE,
 ) -> dict[str, str]:
     if not flagged:
         return {}
-    prompt = build_compaction_prompt(flagged, limits)
-    requested = {line.id for line in flagged}
-    return retry_provider_call(
-        lambda: parse_compactions(runner(prompt), requested),
-        max_retries=max_retries,
-        label="Compaction",
-    )
+    result: dict[str, str] = {}
+    for start in range(0, len(flagged), block_size):
+        chunk = flagged[start : start + block_size]
+        prompt = build_compaction_prompt(chunk, limits)
+        requested = {line.id for line in chunk}
+        result.update(
+            retry_provider_call(
+                partial(lambda p, ids: parse_compactions(runner(p), ids), prompt, requested),
+                max_retries=max_retries,
+                label="Compaction",
+            )
+        )
+    return result

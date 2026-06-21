@@ -38,6 +38,21 @@ move these entries under a dated version heading.
   external plugins, and never `--dangerously-skip-permissions`).
 
 ### Fixed
+- The `--target` can no longer steer a write outside its directory: it is validated as a language
+  tag up front (path separators, `..` and empty values are rejected), the output-filename language
+  code is reduced to alphanumerics, and `translate` additionally asserts the resolved output stays
+  inside the intended directory. Previously a crafted target (e.g. `../../tmp/x`) flowed unsanitized
+  into the output filename.
+- Agent CLIs now run from an empty throwaway working directory, so on top of each CLI's read-only
+  sandbox a crafted subtitle cannot nudge the agent toward whatever files happen to sit in the
+  user's real working directory.
+- `review` and `tighten` no longer send a whole long episode to the model in a single prompt:
+  lines are chunked into blocks (40), like `translate`, which avoids truncation/timeouts and keeps
+  the model's attention focused (each block still carries the episode-spanning glossary/gender
+  sheet). Findings/compactions are merged across blocks.
+- `review` and `tighten` reports carry a provenance manifest (source/translated file names, target,
+  and a content fingerprint), so a report left behind from an earlier run is distinguishable from
+  one matching the current subtitle.
 - `tighten` writes its readability report to the same per-episode directory as the rest of that
   episode's state (`<project>/<target>/<episode-key>/`), resolving project/episode/target the way
   `translate` and `review` do, instead of a divergent `<project>/<lang-from-filename>/<stem>/`

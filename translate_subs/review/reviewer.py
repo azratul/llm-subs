@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
+from functools import partial
 
 from translate_subs.ai.claude_cli import extract_json
 from translate_subs.ai.provider import ProviderError, retry_provider_call
@@ -138,6 +139,11 @@ def apply_safe_policy(
                 f.auto = False
 
 
+# Lines per review request. A whole long episode in one prompt risks truncation/timeouts and
+# degrades attention; the model still sees an episode-spanning glossary/gender sheet in every block.
+REVIEW_BLOCK_SIZE = 40
+
+
 def review_lines(
     lines: list[ReviewLine],
     *,
@@ -148,16 +154,21 @@ def review_lines(
     names: list[str] | None = None,
     runner: Runner,
     max_retries: int = 2,
+    block_size: int = REVIEW_BLOCK_SIZE,
 ) -> list[Finding]:
     if not lines:
         return []
-    prompt = build_review_prompt(
-        lines, glossary=glossary, genders=genders, target=target, source_lang=source_lang
-    )
-    findings = retry_provider_call(
-        lambda: parse_findings(runner(prompt)),
-        max_retries=max_retries,
-        label="Review",
-    )
-    apply_safe_policy(findings, lines, genders, glossary, names)
+    findings: list[Finding] = []
+    for start in range(0, len(lines), block_size):
+        chunk = lines[start : start + block_size]
+        prompt = build_review_prompt(
+            chunk, glossary=glossary, genders=genders, target=target, source_lang=source_lang
+        )
+        chunk_findings = retry_provider_call(
+            partial(lambda p: parse_findings(runner(p)), prompt),
+            max_retries=max_retries,
+            label="Review",
+        )
+        apply_safe_policy(chunk_findings, chunk, genders, glossary, names)
+        findings.extend(chunk_findings)
     return findings

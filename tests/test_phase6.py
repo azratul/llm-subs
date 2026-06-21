@@ -24,9 +24,10 @@ def capture_run(monkeypatch):
     def fake_which(name):
         return f"/usr/bin/{name}"
 
-    def fake_run(cmd, input=None, capture_output=True, text=True, timeout=None):
+    def fake_run(cmd, input=None, capture_output=True, text=True, timeout=None, cwd=None):
         calls["cmd"] = cmd
         calls["input"] = input
+        calls["cwd"] = cwd
         if "-o" in cmd:  # codex writes its final message to this file
             out = Path(cmd[cmd.index("-o") + 1])
             # gemini also uses -o, but as a format name ("text"), not a path;
@@ -70,6 +71,14 @@ def test_opencode_passes_message_as_arg(capture_run):
     assert "--dangerously-skip-permissions" not in cmd
     assert cmd[-1] == "PROMPT"
     assert capture_run["input"] is None
+
+
+def test_cli_adapters_run_from_throwaway_cwd(capture_run):
+    # Hardening: each agent runs in an empty temp dir, not the user's real working directory.
+    for runner in (CodexCli(), GeminiCli(), OpencodeCli()):
+        runner("PROMPT")
+        cwd = capture_run["cwd"]
+        assert cwd is not None and Path(cwd).name.startswith("translate-subs-cwd-")
 
 
 def test_make_runner_and_unknown():

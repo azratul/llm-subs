@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Callable
 from pathlib import Path
 
 from translate_subs import config
 from translate_subs.ai.analysis import EpisodeContext, source_digest
 from translate_subs.memory.store import ProjectMemory, atomic_write_text
-from translate_subs.naming import base_stem
+from translate_subs.naming import base_stem, validate_target
 from translate_subs.readability.compactor import FlaggedLine, compact_lines
 from translate_subs.readability.metrics import (
     ReadabilityLimits,
@@ -62,6 +63,10 @@ def review_translation(
     resolve_source_fn,
     ai_runner_factory: RunnerFactory,
 ) -> ReviewResult:
+    try:
+        validate_target(target)
+    except ValueError as exc:
+        raise PipelineError(str(exc)) from exc
     source = resolve_source_fn(
         input_path,
         work_dir=config.WORK_DIR,
@@ -126,8 +131,14 @@ def review_translation(
         )
 
     report = ReviewReport(episode=episode_name, findings=findings)
+    manifest = {
+        "Source": Path(source.origin).name,
+        "Translated": translated_path.name,
+        "Target": target,
+        "Source fingerprint": source_digest(units),
+    }
     out_path = review_path(project_name, target, episode_name)
-    atomic_write_text(out_path, render_markdown(report))
+    atomic_write_text(out_path, render_markdown(report, manifest))
 
     aligned = (
         len(target_subs.events) == len(units)
@@ -194,6 +205,10 @@ def tighten_subtitle(
     runner=None,
     ai_runner_factory: RunnerFactory,
 ) -> TightenResult:
+    try:
+        validate_target(target)
+    except ValueError as exc:
+        raise PipelineError(str(exc)) from exc
     limits = limits or ReadabilityLimits()
     translated_path = Path(translated_path)
     if not translated_path.exists():
@@ -264,7 +279,17 @@ def tighten_subtitle(
     project_name = project or default_project(translated_path)
     episode_name = episode_key(translated_path)
     out_path = readability_path(project_name, target, episode_name)
-    atomic_write_text(out_path, render_readability_md(base_stem(translated_path), entries))
+    content_fingerprint = hashlib.sha256(
+        "\n".join(event.plaintext for event in subs.events).encode("utf-8")
+    ).hexdigest()[:16]
+    manifest = {
+        "Translated": translated_path.name,
+        "Target": target,
+        "Content fingerprint": content_fingerprint,
+    }
+    atomic_write_text(
+        out_path, render_readability_md(base_stem(translated_path), entries, manifest)
+    )
 
     return TightenResult(
         report_path=out_path,
