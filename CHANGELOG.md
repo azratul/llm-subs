@@ -6,6 +6,16 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+- Review: a model returning the JSON string `"false"` for `auto_safe` no longer reads as truthy
+  (Python's `bool("false")` is `True`), so a finding the model marked not-auto-safe can no longer
+  slip past the safe-fix gate. Only a real boolean `true` or the string `"true"` counts as auto.
+
+### Changed
+- Review provenance manifest is now complete: alongside the source/translated filenames, target
+  and source fingerprint, the report records a fingerprint of the translated content and the
+  provider/model used, so a report can be matched against the exact translated file it reviewed.
+
 ## [0.1.0] - 2026-06-21
 
 First tagged release. Everything below shipped in 0.1.0.

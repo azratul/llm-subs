@@ -83,6 +83,38 @@ def test_parse_findings_handles_array_and_fences():
     assert len(findings) == 1 and findings[0].auto and findings[0].has_fix
 
 
+def test_parse_findings_treats_string_false_as_not_auto():
+    # bool("false") is True in Python; a model returning the JSON string "false" must not flip
+    # a finding to auto-safe. Only a real boolean true or the string "true" counts as auto.
+    raw = json.dumps(
+        [
+            {
+                "scope": "line",
+                "id": "0001",
+                "kind": "glossary",
+                "suggested": "x",
+                "auto_safe": "false",
+            },
+            {
+                "scope": "line",
+                "id": "0002",
+                "kind": "glossary",
+                "suggested": "y",
+                "auto_safe": "true",
+            },
+            {
+                "scope": "line",
+                "id": "0003",
+                "kind": "glossary",
+                "suggested": "z",
+                "auto_safe": True,
+            },
+        ]
+    )
+    findings = parse_findings(raw)
+    assert [f.auto for f in findings] == [False, True, True]
+
+
 def test_safe_policy_gender_requires_confirmed_speaker():
     lines = [
         _line("0001", "a", "cansado", speaker="Yumi"),
@@ -311,6 +343,8 @@ def test_review_translation_applies_only_safe_fixes(tmp_path, monkeypatch):
     assert "Translated: ep01.es.srt" in report_text
     assert "Target: es-latam" in report_text
     assert "Source fingerprint:" in report_text
+    assert "Translated fingerprint:" in report_text
+    assert "Provider:" in report_text
 
     reloaded = pysubs2.load(str(translated_path))
     assert reloaded.events[0].plaintext == "Estoy cansada de esto."

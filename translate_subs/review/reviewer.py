@@ -66,6 +66,20 @@ def build_review_prompt(
     )
 
 
+def _as_bool(value: object) -> bool:
+    """Parse a model's auto_safe flag conservatively.
+
+    Models sometimes return the JSON string "false" instead of the boolean false; `bool("false")`
+    is True in Python, which would wrongly mark a finding as auto-safe. Treat only a real True or
+    the string "true" as truthy, so an explicit "false" (or anything ambiguous) never auto-applies.
+    """
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().casefold() == "true"
+    return False
+
+
 def parse_findings(raw: str) -> list[Finding]:
     text = extract_json(raw)
     try:
@@ -95,7 +109,7 @@ def parse_findings(raw: str) -> list[Finding]:
                 message=str(item.get("message", "")),
                 current=item.get("current"),
                 suggested=item.get("suggested"),
-                auto=bool(item.get("auto_safe", False)),
+                auto=_as_bool(item.get("auto_safe", False)),
             )
         )
     return findings

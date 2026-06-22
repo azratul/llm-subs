@@ -131,11 +131,17 @@ def review_translation(
         )
 
     report = ReviewReport(episode=episode_name, findings=findings)
+    translated_fingerprint = hashlib.sha256(
+        "\n".join(event.plaintext for event in target_subs.events).encode("utf-8")
+    ).hexdigest()[:16]
     manifest = {
         "Source": Path(source.origin).name,
         "Translated": translated_path.name,
         "Target": target,
         "Source fingerprint": source_digest(units),
+        "Translated fingerprint": translated_fingerprint,
+        "Provider": provider,
+        "Model": model or "(default)",
     }
     out_path = review_path(project_name, target, episode_name)
     atomic_write_text(out_path, render_markdown(report, manifest))
