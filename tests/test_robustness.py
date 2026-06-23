@@ -1490,3 +1490,87 @@ def test_batch_cli_pre_analyze_runs_analyze_then_translate(tmp_path, monkeypatch
     assert translate_calls == ["ep01.en.srt"]
     assert "Phase 1/2" in out.stdout
     assert "Phase 2/2" in out.stdout
+
+
+def test_batch_translate_aborts_on_provider_error(tmp_path, monkeypatch):
+    """A ProviderError propagates out of batch_translate instead of being swallowed."""
+    from translate_subs.ai.provider import ProviderError
+
+    monkeypatch.setattr(config, "PROJECTS_DIR", tmp_path / "projects")
+    for n in ("ep01.en.srt", "ep02.en.srt"):
+        _one_line_srt(tmp_path / n)
+
+    def fake_translate(path, **kwargs):
+        raise ProviderError("quota exceeded", retryable=False)
+
+    monkeypatch.setattr(pipeline, "translate_subtitle", fake_translate)
+
+    with pytest.raises(ProviderError, match="quota exceeded"):
+        pipeline.batch_translate(
+            tmp_path,
+            globs=("*.srt",),
+            provider="identity",
+            target="es-latam",
+            fmt="srt",
+            interactive=False,
+            project="P",
+        )
+
+
+def test_batch_analyze_aborts_on_provider_error(tmp_path, monkeypatch):
+    """A ProviderError propagates out of batch_analyze instead of being swallowed."""
+    from translate_subs.ai.provider import ProviderError
+
+    monkeypatch.setattr(config, "PROJECTS_DIR", tmp_path / "projects")
+    for n in ("ep01.en.srt", "ep02.en.srt"):
+        _one_line_srt(tmp_path / n)
+
+    def fake_analyze(path, **kwargs):
+        raise ProviderError("quota exceeded", retryable=False)
+
+    monkeypatch.setattr(pipeline, "analyze_subtitle", fake_analyze)
+
+    with pytest.raises(ProviderError, match="quota exceeded"):
+        pipeline.batch_analyze(
+            tmp_path,
+            globs=("*.srt",),
+            target="es-latam",
+            provider="claude",
+            project="P",
+            interactive=False,
+        )
+
+
+def test_batch_analyze_skips_current_episodes(tmp_path, monkeypatch):
+    """Episodes whose context.json matches the current source are skipped, not re-analyzed."""
+    from translate_subs.workflows.models import AnalysisCurrentError
+
+    monkeypatch.setattr(config, "PROJECTS_DIR", tmp_path / "projects")
+    for n in ("ep01.en.srt", "ep02.en.srt"):
+        _one_line_srt(tmp_path / n)
+
+    calls: list[str] = []
+
+    def fake_analyze(path, **kwargs):
+        name = Path(path).name
+        calls.append(name)
+        if kwargs.get("skip_if_current") and name == "ep01.en.srt":
+            raise AnalysisCurrentError("already current")
+
+    monkeypatch.setattr(pipeline, "analyze_subtitle", fake_analyze)
+
+    result = pipeline.batch_analyze(
+        tmp_path,
+        globs=("*.srt",),
+        target="es-latam",
+        provider="claude",
+        project="P",
+        interactive=False,
+        skip_if_current=True,
+    )
+
+    assert result.n_skipped == 1
+    assert result.n_analyzed == 1
+    assert result.n_failed == 0
+    skipped = next(i for i in result.items if i.status == "skipped")
+    assert skipped.input_path.name == "ep01.en.srt"

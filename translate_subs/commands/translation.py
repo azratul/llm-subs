@@ -295,6 +295,7 @@ def batch(
                 project=project,
                 interactive=False,
                 on_conflict="flag",
+                skip_if_current=True,
             )
             if analyze_result.items:
                 atbl = Table(title=f"{directory} — analysis")
@@ -302,6 +303,7 @@ def batch(
                     atbl.add_column(col)
                 amarks = {
                     "analyzed": "[green]analyzed[/green]",
+                    "skipped": "[yellow]skipped[/yellow]",
                     "failed": "[red]failed[/red]",
                 }
                 for item in analyze_result.items:
@@ -310,6 +312,7 @@ def batch(
                 runtime.console.print(atbl)
             runtime.console.print(
                 f"Analyzed [green]{analyze_result.n_analyzed}[/green], "
+                f"skipped [yellow]{analyze_result.n_skipped}[/yellow], "
                 f"failed [red]{analyze_result.n_failed}[/red]."
             )
             runtime.console.print("[bold]Phase 2/2: Translating episodes…[/bold]")

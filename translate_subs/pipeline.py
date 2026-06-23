@@ -126,6 +126,7 @@ def analyze_subtitle(
     model: str | None = None,
     reasoning: str | None = None,
     max_retries: int = 2,
+    skip_if_current: bool = False,
     runner=None,
 ) -> AnalyzeResult:
     """Analyze the full episode, save episode.context.json, and update series memory."""
@@ -142,6 +143,7 @@ def analyze_subtitle(
         model=model,
         reasoning=reasoning,
         max_retries=max_retries,
+        skip_if_current=skip_if_current,
         runner=runner,
         resolve_source_fn=resolve_source,
         ai_runner_factory=make_ai_runner,
@@ -297,8 +299,10 @@ def batch_translate(
     """Translate every matching file in `directory`, continuing past per-episode failures.
 
     Each file goes through `translate_subtitle` with the shared `translate_kwargs`. An episode
-    whose output already exists is recorded as skipped (unless `force=True`); one that raises is
-    recorded as failed and the batch moves on, so a single bad episode never aborts the season.
+    whose output already exists is recorded as skipped (unless `force=True`); a per-episode error
+    (bad subtitle, missing track, etc.) is recorded as failed and the batch moves on. A
+    `ProviderError` — rate limit, quota, bad model, auth failure — is re-raised immediately so
+    the caller learns about a systemic failure without processing the rest of the season.
     `on_episode(index, total, path)` is called before each file for progress reporting.
     """
     return _batch_translate(

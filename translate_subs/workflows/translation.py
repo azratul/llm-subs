@@ -36,6 +36,7 @@ from translate_subs.subs.validator import (
     validate_translations,
 )
 from translate_subs.workflows.models import (
+    AnalysisCurrentError,
     AnalyzeBatchItem,
     AnalyzeBatchResult,
     BatchItem,
@@ -270,6 +271,10 @@ def batch_analyze(
             on_episode(index, total, path)
         try:
             analyze_fn(path, **analyze_kwargs)
+        except AnalysisCurrentError:
+            result.items.append(AnalyzeBatchItem(path, "skipped"))
+        except ProviderError:
+            raise  # systemic failure (quota, bad model, auth) — abort the batch
         except (PipelineError, *_EXPECTED_PIPELINE_ERRORS) as exc:
             result.items.append(AnalyzeBatchItem(path, "failed", error=str(exc)))
         else:
@@ -299,6 +304,8 @@ def batch_translate(
             translated = translate_fn(path, **translate_kwargs)
         except OutputExistsError:
             result.items.append(BatchItem(path, "skipped", error=None))
+        except ProviderError:
+            raise  # systemic failure (quota, bad model, auth) — abort the batch
         except (PipelineError, *_EXPECTED_PIPELINE_ERRORS) as exc:
             result.items.append(BatchItem(path, "failed", error=str(exc)))
         else:

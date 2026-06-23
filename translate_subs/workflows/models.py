@@ -27,6 +27,14 @@ class OutputExistsError(PipelineError):
     """
 
 
+class AnalysisCurrentError(Exception):
+    """Raised by `analyze_subtitle` when the context is already current (source unchanged).
+
+    Caught by `batch_analyze` to record the episode as *skipped* rather than *failed*.
+    Not a `PipelineError` so it bypasses the general per-episode error handler.
+    """
+
+
 @dataclass
 class TranslateResult:
     source: ResolvedSource
@@ -69,7 +77,7 @@ class BatchResult:
 @dataclass
 class AnalyzeBatchItem:
     input_path: Path
-    status: Literal["analyzed", "failed"]
+    status: Literal["analyzed", "skipped", "failed"]
     error: str | None = None
 
 
@@ -80,6 +88,10 @@ class AnalyzeBatchResult:
     @property
     def n_analyzed(self) -> int:
         return sum(1 for item in self.items if item.status == "analyzed")
+
+    @property
+    def n_skipped(self) -> int:
+        return sum(1 for item in self.items if item.status == "skipped")
 
     @property
     def n_failed(self) -> int:

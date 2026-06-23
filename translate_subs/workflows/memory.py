@@ -24,6 +24,7 @@ from translate_subs.naming import validate_target
 from translate_subs.subs import document
 from translate_subs.subs.extractor import extract_units
 from translate_subs.workflows.models import (
+    AnalysisCurrentError,
     AnalyzeResult,
     CompactMemoryResult,
     ConflictPrompt,
@@ -84,6 +85,7 @@ def analyze_subtitle(
     model: str | None = None,
     reasoning: str | None = None,
     max_retries: int = 2,
+    skip_if_current: bool = False,
     runner=None,
     resolve_source_fn,
     ai_runner_factory,
@@ -104,6 +106,14 @@ def analyze_subtitle(
         raise PipelineError("No translatable lines found in the subtitle.")
 
     project_name, episode_name = project_episode(source, project)
+
+    if skip_if_current:
+        ep_ctx_path = context_path(project_name, target, episode_name)
+        if ep_ctx_path.exists():
+            existing = EpisodeContext.model_validate_json(ep_ctx_path.read_text("utf-8"))
+            if existing.source_hash and existing.source_hash == source_digest(units):
+                raise AnalysisCurrentError(f"Context already current: {ep_ctx_path}")
+
     project_memory = ProjectMemory.load(memory_root(project_name, target))
     context = analyze_episode(
         units,
