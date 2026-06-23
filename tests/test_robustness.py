@@ -1363,7 +1363,12 @@ def test_parallel_translate_all_blocks(tmp_path):
 
 
 def test_parallel_translate_serves_cache_hits(tmp_path):
-    from translate_subs.ai.checkpoint import BlockCheckpoint, _Entry, block_hash, translate_with_checkpoint
+    from translate_subs.ai.checkpoint import (
+        BlockCheckpoint,
+        _Entry,
+        block_hash,
+        translate_with_checkpoint,
+    )
 
     jobs = [_job("0001", [("0001", "a")]), _job("0002", [("0002", "b")])]
     cp = BlockCheckpoint(tmp_path / "cp.json", signature="ollama|")

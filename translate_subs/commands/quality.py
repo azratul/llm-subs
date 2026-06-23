@@ -19,6 +19,7 @@ def _print_diff_table(console, fixes: list[tuple[str, str, str]], title: str) ->
         table.add_row(fix_id, old, new)
     console.print(table)
 
+
 _AI_PROVIDER_HELP = "claude | codex | antigravity | opencode"
 # Options that fall through to project settings.json when not given on the command line.
 _AUX_DEFAULTED = ("provider", "model", "target", "lang", "reasoning")
