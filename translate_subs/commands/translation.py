@@ -296,15 +296,22 @@ def batch(
                 interactive=False,
                 on_conflict="flag",
             )
-            if analyze_result.n_failed:
-                runtime.console.print(
-                    f"Analyzed [green]{analyze_result.n_analyzed}[/green] episode(s), "
-                    f"[yellow]{analyze_result.n_failed} failed[/yellow] (continuing)."
-                )
-            else:
-                runtime.console.print(
-                    f"Analyzed [green]{analyze_result.n_analyzed}[/green] episode(s)."
-                )
+            if analyze_result.items:
+                atbl = Table(title=f"{directory} — analysis")
+                for col in ("episode", "status", "detail"):
+                    atbl.add_column(col)
+                amarks = {
+                    "analyzed": "[green]analyzed[/green]",
+                    "failed": "[red]failed[/red]",
+                }
+                for item in analyze_result.items:
+                    detail = item.error or "" if item.status == "failed" else ""
+                    atbl.add_row(item.input_path.name, amarks[item.status], detail)
+                runtime.console.print(atbl)
+            runtime.console.print(
+                f"Analyzed [green]{analyze_result.n_analyzed}[/green], "
+                f"failed [red]{analyze_result.n_failed}[/red]."
+            )
             runtime.console.print("[bold]Phase 2/2: Translating episodes…[/bold]")
 
         result = runtime.batch_translate(
