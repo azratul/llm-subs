@@ -157,7 +157,10 @@ def review_translation(
     )
     n_applied = 0
     auto_fixes = report.auto_fixes()
-    if apply and auto_fixes and aligned:
+    planned_fixes: list[tuple[str, str, str]] = []
+    applied_fixes: list[tuple[str, str, str]] = []
+
+    if auto_fixes and aligned:
         index_by_id = {line.id: line.event_index for line in lines}
         # Each safe fix is a whole-line replacement, so two fixes on the same line would clobber
         # each other (last wins, the first silently lost). When a line has more than one distinct
@@ -166,24 +169,29 @@ def review_translation(
         for fix in auto_fixes:
             if fix.id is not None and fix.suggested is not None:
                 suggestions_by_id.setdefault(fix.id, set()).add(fix.suggested)
-        applied_ids: set[str] = set()
+        seen_ids: set[str] = set()
         for fix in auto_fixes:
             index = index_by_id.get(fix.id or "")
             if (
                 index is not None
                 and fix.suggested is not None
-                and fix.id not in applied_ids
+                and fix.id not in seen_ids
                 and len(suggestions_by_id.get(fix.id or "", set())) == 1
             ):
-                replace_visible_text(target_subs.events[index], fix.suggested)
-                applied_ids.add(fix.id or "")
+                old_text = target_subs.events[index].plaintext
+                planned_fixes.append((fix.id or "", old_text, fix.suggested))
+                seen_ids.add(fix.id or "")
+        if apply:
+            for fix_id, old_text, new_text in planned_fixes:
+                replace_visible_text(target_subs.events[index_by_id[fix_id]], new_text)
+                applied_fixes.append((fix_id, old_text, new_text))
                 n_applied += 1
-        if n_applied:
-            atomic_save(
-                target_subs,
-                translated_path,
-                validate=lambda path: validate_output(path, units),
-            )
+            if n_applied:
+                atomic_save(
+                    target_subs,
+                    translated_path,
+                    validate=lambda path: validate_output(path, units),
+                )
 
     return ReviewResult(
         report=report,
@@ -193,6 +201,8 @@ def review_translation(
         n_applied=n_applied,
         mapping_aligned=aligned,
         context_stale=context_stale,
+        planned_fixes=planned_fixes,
+        applied_fixes=applied_fixes,
     )
 
 
@@ -248,6 +258,7 @@ def tighten_subtitle(
     entries: list[ReadabilityEntry] = []
     n_applied = 0
     n_residual = 0
+    applied_compactions: list[tuple[str, str, str]] = []
     for line in flagged:
         compact = compactions.get(line.id)
         residual: list[str] = []
@@ -262,6 +273,7 @@ def tighten_subtitle(
             rejected = not improved
             if apply and improved:
                 replace_visible_text(event, compact)
+                applied_compactions.append((line.id, line.text, compact))
                 n_applied += 1
             if residual and improved:
                 n_residual += 1
@@ -305,6 +317,7 @@ def tighten_subtitle(
         n_compacted=len(compactions),
         n_applied=n_applied,
         n_residual=n_residual,
+        applied_compactions=applied_compactions,
     )
 
 

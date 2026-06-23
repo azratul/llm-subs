@@ -105,6 +105,9 @@ class ReviewResult:
     n_applied: int
     mapping_aligned: bool = True
     context_stale: bool = False  # episode.context.json was analyzed from a different source
+    # (id, old_text, new_text) pairs for fixes that would/were applied
+    planned_fixes: list[tuple[str, str, str]] = field(default_factory=list)
+    applied_fixes: list[tuple[str, str, str]] = field(default_factory=list)
 
 
 @dataclass
@@ -116,6 +119,8 @@ class TightenResult:
     n_compacted: int
     n_applied: int
     n_residual: int
+    # (id, old_text, new_text) pairs for compactions that were written
+    applied_compactions: list[tuple[str, str, str]] = field(default_factory=list)
 
 
 ConflictChoice = Literal["keep", "use", "skip"]

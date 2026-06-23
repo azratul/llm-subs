@@ -5,8 +5,19 @@ from __future__ import annotations
 from pathlib import Path
 
 import typer
+from rich.table import Table
 
 from translate_subs.readability.metrics import ReadabilityLimits
+
+
+def _print_diff_table(console, fixes: list[tuple[str, str, str]], title: str) -> None:
+    table = Table(title=title, show_header=True, header_style="bold", expand=False)
+    table.add_column("ID", style="dim", no_wrap=True, width=6)
+    table.add_column("Before", style="red")
+    table.add_column("After", style="green")
+    for fix_id, old, new in fixes:
+        table.add_row(fix_id, old, new)
+    console.print(table)
 
 _AI_PROVIDER_HELP = "claude | codex | antigravity | opencode"
 # Options that fall through to project settings.json when not given on the command line.
@@ -91,6 +102,13 @@ def review(
         )
     elif apply:
         runtime.console.print(f"Applied [green]{result.n_applied}[/green] safe fix(es).")
+        if result.applied_fixes:
+            _print_diff_table(runtime.console, result.applied_fixes, "Applied fixes")
+    elif result.planned_fixes:
+        runtime.console.print(
+            f"[dim]{len(result.planned_fixes)} safe fix(es) available — use --apply to write.[/dim]"
+        )
+        _print_diff_table(runtime.console, result.planned_fixes, "Suggested fixes")
     runtime.console.print(f"Report: [green]{result.report_path}[/green]")
 
 
@@ -150,6 +168,8 @@ def tighten(
     )
     if apply:
         runtime.console.print(f"Applied [green]{result.n_applied}[/green] compaction(s).")
+        if result.applied_compactions:
+            _print_diff_table(runtime.console, result.applied_compactions, "Applied compactions")
     if result.n_residual:
         runtime.console.print(
             f"[yellow]{result.n_residual} still over limit after compaction.[/yellow]"
