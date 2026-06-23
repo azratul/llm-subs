@@ -88,9 +88,18 @@ def flatten_overlaps(subs: pysubs2.SSAFile) -> None:
     degenerate = [e for e in events if e.end <= e.start]
 
     boundaries = sorted({e.start for e in timed} | {e.end for e in timed})
+    # Sweep line: sort once by start time; advance a pointer to add events as their start
+    # time is reached. Each event is added once and removed once → O(n log n) total instead
+    # of the O(n²) scan that checked every event against every interval boundary.
+    by_start = sorted(timed, key=lambda e: e.start)
+    ptr = 0
+    active: list[pysubs2.SSAEvent] = []
     segments: list[tuple[int, int, str]] = []
     for start, end in zip(boundaries, boundaries[1:], strict=False):
-        active = [e for e in timed if e.start <= start and e.end >= end]
+        while ptr < len(by_start) and by_start[ptr].start <= start:
+            active.append(by_start[ptr])
+            ptr += 1
+        active = [e for e in active if e.end >= end]
         if not active:
             continue
         active.sort(key=lambda e: (_alignment_rank(subs, e), e.start))
