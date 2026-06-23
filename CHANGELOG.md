@@ -6,6 +6,21 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- `batch --pre-analyze` skips episodes whose `episode.context.json` is already current (source
+  hash matches), so re-running after a partial analyze phase does not re-analyze episodes that
+  succeeded — only the ones that failed or are new get a fresh LLM call. The per-episode table
+  and the summary line now include a "skipped" count alongside analyzed/failed.
+
+### Changed
+- `batch` (translate and analyze phases) now aborts immediately when a `ProviderError` propagates
+  out of an episode instead of recording it as a per-episode failure and continuing. A
+  `ProviderError` signals a systemic condition — rate limit, quota exhausted, wrong model name,
+  authentication failure — that will affect every subsequent episode, so stopping early and
+  surfacing the original provider message is more useful than silently accumulating failures across
+  a multi-hour run. Per-episode errors that are not provider failures (bad subtitle file, missing
+  track, etc.) still continue as before.
+
 ## [0.2.1] - 2026-06-23
 
 ### Added
