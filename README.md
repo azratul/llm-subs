@@ -481,9 +481,10 @@ specific items follow.
   deterministic contract (stable IDs, ID/timestamp validation, glossary/gender consistency
   checks) and by human reading. Prompt changes are reviewed by their effect on real episodes, not
   by an automated score.
-- **A hard coverage threshold in CI.** Coverage is measured and reported, not gated. A 90–95%
-  gate tends to incentivise filler tests; effort goes to tests that exercise real behaviour (CLI,
-  extraction) instead of chasing a number.
+- **A hard coverage threshold in CI.** Coverage is measured and reported, not gated. A strict 90–95%
+  gate tends to incentivise filler tests that just exercise framework glue code — testing whether
+  Typer prints the right error when a file is missing, for instance. Effort goes to tests that
+  exercise real deterministic behaviour (extraction, reinsertion) instead of chasing a number.
 - **Fuzz / property-based testing of ASS/SRT.** Parsing is delegated to `pysubs2`; the project
   tests its own extraction/reinsertion logic, not the parser's robustness to malformed input.
 - **OS-level sandboxing of agent CLIs.** Each agent CLI is invoked with its own built-in
@@ -522,8 +523,10 @@ specific items follow.
   the default `.ass` output. On a `.srt` whose overlapping cues were merged (counts differ),
   `--apply` is **automatically skipped with a notice** — the report is still written for reading —
   so a fix is never applied to the wrong cue. Re-run review against the `.ass` to apply fixes.
-  Applied review fixes and readability compactions preserve whole-line leading ASS override tags
-  such as positioning, alignment and colour.
+  Doing string surgery inside merged multi-line `.srt` cues to map an ID back to a portion of
+  text is extremely fragile and risks silent data corruption. The `.ass` format is the lossless
+  default and the correct choice when high-fidelity revision is needed — applied review fixes
+  and readability compactions preserve whole-line leading ASS override tags.
 - **`file-handoff` does not hash or version jobs.** It is a manual escape hatch; make sure you
   fill the matching `*.out.json`.
 
