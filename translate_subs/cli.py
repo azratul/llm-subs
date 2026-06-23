@@ -30,6 +30,7 @@ DEFAULT_BATCH_GLOBS = _pipeline.DEFAULT_BATCH_GLOBS
 ConflictChoice = _pipeline.ConflictChoice
 PipelineError = _pipeline.PipelineError
 analyze_subtitle = _pipeline.analyze_subtitle
+batch_analyze = _pipeline.batch_analyze
 batch_translate = _pipeline.batch_translate
 compact_memory = _pipeline.compact_memory
 project_dir = _pipeline.project_dir
@@ -49,7 +50,17 @@ _EXPECTED_ERRORS = (
     OSError,
     ValueError,
 )
-_PROJECT_DEFAULTED = ("provider", "model", "target", "lang", "format", "reasoning")
+_PROJECT_DEFAULTED = (
+    "provider",
+    "model",
+    "target",
+    "lang",
+    "format",
+    "reasoning",
+    "analyze_provider",
+    "analyze_model",
+    "analyze_reasoning",
+)
 
 app = typer.Typer(
     add_completion=False,

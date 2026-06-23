@@ -32,6 +32,7 @@ from translate_subs.workflows.memory import (
 )
 from translate_subs.workflows.memory import update_memory as _update_memory
 from translate_subs.workflows.models import (
+    AnalyzeBatchResult,
     AnalyzeResult,
     BatchResult,
     CompactMemoryResult,
@@ -81,6 +82,9 @@ from translate_subs.workflows.support import (
 )
 from translate_subs.workflows.translation import (
     DEFAULT_BATCH_GLOBS,
+)
+from translate_subs.workflows.translation import (
+    batch_analyze as _batch_analyze,
 )
 from translate_subs.workflows.translation import (
     batch_translate as _batch_translate,
@@ -253,6 +257,32 @@ def discover_inputs(
         globs=globs,
         recursive=recursive,
         target=target,
+    )
+
+
+def batch_analyze(
+    directory: str | Path,
+    *,
+    globs: tuple[str, ...] = DEFAULT_BATCH_GLOBS,
+    recursive: bool = False,
+    on_episode: Callable[[int, int, Path], None] | None = None,
+    **analyze_kwargs,
+) -> AnalyzeBatchResult:
+    """Analyze every matching file in `directory` to build series memory.
+
+    Each file goes through `analyze_subtitle` with the shared `analyze_kwargs`. A failed
+    episode is recorded and the batch moves on. Meant to run before `batch_translate` so the
+    full series memory (characters, glossary, style guide) is available for every translation.
+    `on_episode(index, total, path)` is called before each file for progress reporting.
+    """
+    return _batch_analyze(
+        directory,
+        globs=globs,
+        recursive=recursive,
+        on_episode=on_episode,
+        discover_inputs_fn=discover_inputs,
+        analyze_fn=analyze_subtitle,
+        **analyze_kwargs,
     )
 
 

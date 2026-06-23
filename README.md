@@ -229,7 +229,7 @@ uv run translate-subs translate "$EP" --provider codex --model gpt-5.5 \
 |---|---|
 | `probe <media>` | Lists the embedded subtitle tracks of a container. |
 | `translate <input>` | Translates and exports `<base>.<lang>.<format>` (`.ass` by default, `.srt` with `--format srt`). |
-| `batch <directory>` | Translates every matching file in a directory (`--glob`, default `*.mkv`; `-r` recurses), skipping done episodes and continuing past per-episode failures. |
+| `batch <directory>` | Translates every matching file in a directory (`--glob`, default `*.mkv`; `-r` recurses), skipping done episodes and continuing past per-episode failures. Pass `--pre-analyze` to analyze all episodes first and build full series memory before translating any of them. |
 | `config <project>` | Shows or sets per-project default options (provider, model, target, lang, format, reasoning) in `settings.json`. |
 | `analyze <input>` | Generates `episode.context.json` and updates the series memory. |
 | `review <source> <translated>` | Quality review → `episode.review.md` (with `--apply`, applies the safe fixes). |
@@ -307,6 +307,39 @@ summary table reports translated/skipped/failed, and the command exits non-zero 
 failed (or, with `--fail-on-untranslated`, if any line was left untranslated). Because each
 episode still checkpoints per block, interrupting a season and rerunning resumes mid-episode.
 
+#### Building series memory before translating
+
+For the best translation quality, run `--pre-analyze` to analyze every episode first and build
+the shared project memory (characters, genders, glossary, style guide) before any translation
+begins:
+
+```bash
+translate-subs batch "TV Shows/Show/Season 1" --project "Show" --target es-latam \
+  --provider claude --pre-analyze
+```
+
+Without `--pre-analyze`, each episode is translated with only the memory accumulated from the
+episodes that came before it in the batch — episode 20 benefits from episodes 1–19, but episode
+1 has nothing. With `--pre-analyze`, all episodes contribute to the shared memory first, so
+every episode (including the first) benefits from the full series context. The command runs in
+two clearly labeled phases:
+
+```
+Phase 1/2: Analyzing episodes…
+[Analyze 1/24] Episode 01.mkv
+[Analyze 2/24] Episode 02.mkv
+…
+Analyzed 24 episode(s).
+Phase 2/2: Translating episodes…
+[1/24] Episode 01.mkv
+…
+```
+
+A failed analysis is noted and skipped (translation still proceeds with whatever memory was
+built). For very long series, analyzing just the first 5–10 episodes is usually enough to
+capture the main cast and glossary; run the analysis manually with `analyze` for those episodes,
+then use `batch` without `--pre-analyze` for the rest.
+
 ### Per-project defaults
 
 Instead of repeating `--provider`, `--model`, `--target`, etc. for every episode of a series, pin
@@ -335,14 +368,20 @@ directory, it does not discover files, and it does not trigger analysis automati
 
 Therefore, running only `translate --project "Series"` produces the output file, but does not
 create `data/projects/` or accumulate memory. To get contextual translation across episodes you
-must first run `analyze` for each episode:
+must first run `analyze` for each episode, or use `batch --pre-analyze` to do both phases in one
+command:
 
 ```bash
+# Single episode: analyze first, then translate
 uv run translate-subs analyze episode.mkv \
   --provider codex --project "Series" --non-interactive
 
 uv run translate-subs translate episode.mkv \
   --provider codex --project "Series" --non-interactive
+
+# Whole season: analyze all episodes first, then translate all (recommended)
+uv run translate-subs batch "Season 1/" --project "Series" \
+  --provider codex --pre-analyze --non-interactive
 ```
 
 ## Memory and conflicts

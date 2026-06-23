@@ -36,6 +36,8 @@ from translate_subs.subs.validator import (
     validate_translations,
 )
 from translate_subs.workflows.models import (
+    AnalyzeBatchItem,
+    AnalyzeBatchResult,
     BatchItem,
     BatchResult,
     OutputExistsError,
@@ -242,6 +244,37 @@ def discover_inputs(
             if stem_tail != target_code:
                 found.add(path)
     return sorted(found)
+
+
+def batch_analyze(
+    directory: str | Path,
+    *,
+    globs: tuple[str, ...] = DEFAULT_BATCH_GLOBS,
+    recursive: bool = False,
+    on_episode: Callable[[int, int, Path], None] | None = None,
+    discover_inputs_fn=discover_inputs,
+    analyze_fn,
+    **analyze_kwargs,
+) -> AnalyzeBatchResult:
+    """Analyze matching inputs to build series memory, continuing past per-file failures.
+
+    Meant to run before `batch_translate` so every episode contributes to the shared
+    project memory (characters, glossary, style guide) before any translation begins.
+    """
+    target = analyze_kwargs.get("target", config.DEFAULT_TARGET)
+    inputs = discover_inputs_fn(directory, globs=globs, recursive=recursive, target=target)
+    result = AnalyzeBatchResult()
+    total = len(inputs)
+    for index, path in enumerate(inputs, start=1):
+        if on_episode is not None:
+            on_episode(index, total, path)
+        try:
+            analyze_fn(path, **analyze_kwargs)
+        except (PipelineError, *_EXPECTED_PIPELINE_ERRORS) as exc:
+            result.items.append(AnalyzeBatchItem(path, "failed", error=str(exc)))
+        else:
+            result.items.append(AnalyzeBatchItem(path, "analyzed"))
+    return result
 
 
 def batch_translate(

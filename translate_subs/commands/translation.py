@@ -249,6 +249,13 @@ def batch(
         "-y",
         help="Resolve track/language choices without prompting (default for batch).",
     ),
+    pre_analyze: bool = typer.Option(
+        False,
+        "--pre-analyze",
+        help="Analyze every episode first to build series memory, then translate. "
+        "Produces better translations because the full character/glossary context is "
+        "available before any episode is translated.",
+    ),
 ):
     """Translate every matching file in a directory, continuing past per-episode failures."""
     runtime = _runtime()
@@ -264,6 +271,42 @@ def batch(
         reasoning = overrides.get("reasoning", reasoning)
         lang = overrides.get("lang", lang)
         format = overrides.get("format", format)
+
+        if pre_analyze:
+            runtime.console.print("[bold]Phase 1/2: Analyzing episodes…[/bold]")
+
+            def on_analyze(index: int, total: int, path: Path) -> None:
+                runtime.console.print(f"[cyan]\\[Analyze {index}/{total}][/cyan] {path.name}")
+
+            analyze_provider = overrides.get("analyze_provider") or provider
+            analyze_model = overrides.get("analyze_model") or model
+            analyze_reasoning = overrides.get("analyze_reasoning") or reasoning
+            analyze_result = runtime.batch_analyze(
+                directory,
+                globs=tuple(glob),
+                recursive=recursive,
+                on_episode=on_analyze,
+                target=target,
+                provider=analyze_provider,
+                model=analyze_model,
+                reasoning=analyze_reasoning,
+                max_retries=retries,
+                lang=lang,
+                project=project,
+                interactive=False,
+                on_conflict="flag",
+            )
+            if analyze_result.n_failed:
+                runtime.console.print(
+                    f"Analyzed [green]{analyze_result.n_analyzed}[/green] episode(s), "
+                    f"[yellow]{analyze_result.n_failed} failed[/yellow] (continuing)."
+                )
+            else:
+                runtime.console.print(
+                    f"Analyzed [green]{analyze_result.n_analyzed}[/green] episode(s)."
+                )
+            runtime.console.print("[bold]Phase 2/2: Translating episodes…[/bold]")
+
         result = runtime.batch_translate(
             directory,
             globs=tuple(glob),

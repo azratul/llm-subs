@@ -37,6 +37,9 @@ class ProjectSettings(BaseModel):
     lang: str | None = None
     format: str | None = None
     reasoning: str | None = None
+    analyze_provider: str | None = None
+    analyze_model: str | None = None
+    analyze_reasoning: str | None = None
 
     @field_validator("target")
     @classmethod
@@ -47,7 +50,7 @@ class ProjectSettings(BaseModel):
             validate_target(value)
         return value
 
-    @field_validator("provider")
+    @field_validator("provider", "analyze_provider")
     @classmethod
     def _check_provider(cls, value: str | None) -> str | None:
         if value is not None and value not in VALID_PROVIDERS:
@@ -63,7 +66,7 @@ class ProjectSettings(BaseModel):
             raise ValueError(f"invalid format '{value}' (use ass or srt)")
         return value
 
-    @field_validator("reasoning")
+    @field_validator("reasoning", "analyze_reasoning")
     @classmethod
     def _check_reasoning(cls, value: str | None) -> str | None:
         if value is not None and value not in VALID_REASONING:

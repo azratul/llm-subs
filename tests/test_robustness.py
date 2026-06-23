@@ -1413,3 +1413,80 @@ def test_parallel_provider_falls_back_to_sequential_without_translate_block(tmp_
 
     assert sorted(prov.calls) == ["0001", "0002"]
     assert translations == {"0001": "X", "0002": "Y"}
+
+
+# --- batch_analyze and --pre-analyze ------------------------------------------------
+
+
+def test_batch_analyze_analyzes_all_and_continues_past_failures(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "PROJECTS_DIR", tmp_path / "projects")
+    for n in ("ep01.en.srt", "ep02.en.srt", "ep03.en.srt"):
+        _one_line_srt(tmp_path / n)
+
+    calls: list[str] = []
+
+    def fake_analyze(path, **kwargs):
+        name = Path(path).name
+        calls.append(name)
+        if name == "ep03.en.srt":
+            raise pipeline.PipelineError("no track")
+
+    monkeypatch.setattr(pipeline, "analyze_subtitle", fake_analyze)
+
+    seen: list[str] = []
+    result = pipeline.batch_analyze(
+        tmp_path,
+        globs=("*.srt",),
+        on_episode=lambda i, n, p: seen.append(p.name),
+        target="es-latam",
+        provider="claude",
+        project="P",
+        interactive=False,
+    )
+
+    assert result.n_analyzed == 2
+    assert result.n_failed == 1
+    assert calls == seen == ["ep01.en.srt", "ep02.en.srt", "ep03.en.srt"]
+    failed = next(i for i in result.items if i.status == "failed")
+    assert "no track" in failed.error
+
+
+def test_batch_cli_pre_analyze_runs_analyze_then_translate(tmp_path, monkeypatch):
+    from translate_subs import cli
+    from translate_subs.pipeline import AnalyzeBatchResult, BatchItem, BatchResult
+    from translate_subs.workflows.models import AnalyzeBatchItem
+
+    analyze_calls: list[str] = []
+    translate_calls: list[str] = []
+
+    def fake_batch_analyze(directory, *, on_episode=None, **kwargs):
+        r = AnalyzeBatchResult()
+        for p in sorted(tmp_path.glob("*.srt")):
+            if on_episode:
+                on_episode(1, 1, p)
+            analyze_calls.append(p.name)
+            r.items.append(AnalyzeBatchItem(p, "analyzed"))
+        return r
+
+    def fake_batch_translate(directory, *, on_episode=None, **kwargs):
+        r = BatchResult()
+        for p in sorted(tmp_path.glob("*.srt")):
+            if on_episode:
+                on_episode(1, 1, p)
+            translate_calls.append(p.name)
+            r.items.append(BatchItem(p, "translated", output_path=p))
+        return r
+
+    monkeypatch.setattr(cli, "batch_analyze", fake_batch_analyze)
+    monkeypatch.setattr(cli, "batch_translate", fake_batch_translate)
+    _one_line_srt(tmp_path / "ep01.en.srt")
+
+    from typer.testing import CliRunner
+
+    runner = CliRunner()
+    out = runner.invoke(cli.app, ["batch", str(tmp_path), "--pre-analyze"])
+    assert out.exit_code == 0
+    assert analyze_calls == ["ep01.en.srt"]
+    assert translate_calls == ["ep01.en.srt"]
+    assert "Phase 1/2" in out.stdout
+    assert "Phase 2/2" in out.stdout

@@ -67,6 +67,26 @@ class BatchResult:
 
 
 @dataclass
+class AnalyzeBatchItem:
+    input_path: Path
+    status: Literal["analyzed", "failed"]
+    error: str | None = None
+
+
+@dataclass
+class AnalyzeBatchResult:
+    items: list[AnalyzeBatchItem] = field(default_factory=list)
+
+    @property
+    def n_analyzed(self) -> int:
+        return sum(1 for item in self.items if item.status == "analyzed")
+
+    @property
+    def n_failed(self) -> int:
+        return sum(1 for item in self.items if item.status == "failed")
+
+
+@dataclass
 class AnalyzeResult:
     source: ResolvedSource
     context_path: Path

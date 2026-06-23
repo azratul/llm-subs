@@ -13,7 +13,16 @@ from translate_subs.settings import ProjectSettings, load_settings, save_setting
 _CONFLICT_HELP = "On contradicting suggestions: ask | keep | overwrite | flag."
 _AI_PROVIDER_HELP = "claude | codex | antigravity | opencode"
 # Options that fall through to project settings.json when not given on the command line.
-_AUX_DEFAULTED = ("provider", "model", "target", "lang", "reasoning")
+_AUX_DEFAULTED = (
+    "provider",
+    "model",
+    "target",
+    "lang",
+    "reasoning",
+    "analyze_provider",
+    "analyze_model",
+    "analyze_reasoning",
+)
 
 
 def _runtime():
@@ -32,6 +41,21 @@ def config(
     reasoning: str | None = typer.Option(
         None, "--reasoning", help="Default codex reasoning effort."
     ),
+    analyze_provider: str | None = typer.Option(
+        None,
+        "--analyze-provider",
+        help="Provider for batch --pre-analyze (defaults to --provider if unset).",
+    ),
+    analyze_model: str | None = typer.Option(
+        None,
+        "--analyze-model",
+        help="Model id for batch --pre-analyze (defaults to --model if unset).",
+    ),
+    analyze_reasoning: str | None = typer.Option(
+        None,
+        "--analyze-reasoning",
+        help="Reasoning effort for batch --pre-analyze (defaults to --reasoning if unset).",
+    ),
     unset: list[str] = typer.Option(
         [], "--unset", help="Field name(s) to clear back to the built-in default (repeatable)."
     ),
@@ -49,6 +73,9 @@ def config(
         "lang": lang,
         "format": format,
         "reasoning": reasoning,
+        "analyze_provider": analyze_provider,
+        "analyze_model": analyze_model,
+        "analyze_reasoning": analyze_reasoning,
     }
     for key in unset:
         if key not in ProjectSettings.model_fields:
@@ -73,7 +100,17 @@ def config(
     table = Table(title=f"{project} defaults")
     table.add_column("key")
     table.add_column("value")
-    for key in ("provider", "model", "target", "lang", "format", "reasoning"):
+    for key in (
+        "provider",
+        "model",
+        "target",
+        "lang",
+        "format",
+        "reasoning",
+        "analyze_provider",
+        "analyze_model",
+        "analyze_reasoning",
+    ):
         table.add_row(key, str(getattr(settings, key) or "—"))
     runtime.console.print(table)
     runtime.console.print(f"[green]{project_path / 'settings.json'}[/green]")
@@ -102,9 +139,9 @@ def analyze(
     policy = runtime._resolve_policy(on_conflict, non_interactive)
     overrides = runtime._project_overrides(ctx, project, _AUX_DEFAULTED)
     target = overrides.get("target", target)
-    provider = overrides.get("provider", provider)
-    model = overrides.get("model", model)
-    reasoning = overrides.get("reasoning", reasoning)
+    provider = overrides.get("analyze_provider") or overrides.get("provider", provider)
+    model = overrides.get("analyze_model") or overrides.get("model", model)
+    reasoning = overrides.get("analyze_reasoning") or overrides.get("reasoning", reasoning)
     lang = overrides.get("lang", lang)
     try:
         with runtime.console.status("Analyzing…", spinner="dots"):
