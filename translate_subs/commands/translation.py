@@ -9,6 +9,7 @@ from rich.progress import (
     BarColumn,
     MofNCompleteColumn,
     Progress,
+    SpinnerColumn,
     TextColumn,
     TimeRemainingColumn,
 )
@@ -123,6 +124,7 @@ def translate(
     try:
         if runtime.console.is_terminal:
             with Progress(
+                SpinnerColumn(),
                 TextColumn("[progress.description]{task.description}"),
                 BarColumn(),
                 MofNCompleteColumn(),
@@ -130,7 +132,7 @@ def translate(
                 console=runtime.console,
                 transient=True,
             ) as progress:
-                task = progress.add_task("Translating", total=None)
+                task = progress.add_task("Setting up…", total=None)
 
                 def on_progress(event) -> None:
                     progress.update(

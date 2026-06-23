@@ -66,22 +66,23 @@ def review(
     reasoning = overrides.get("reasoning", reasoning)
     lang = overrides.get("lang", lang)
     try:
-        result = runtime.review_translation(
-            source,
-            translated,
-            target=target,
-            track_index=track,
-            lang=lang,
-            project=project,
-            interactive=not non_interactive,
-            max_chars=max_chars,
-            use_llm=not no_llm,
-            apply=apply,
-            provider=provider,
-            model=model,
-            reasoning=reasoning,
-            max_retries=retries,
-        )
+        with runtime.console.status("Reviewing…", spinner="dots"):
+            result = runtime.review_translation(
+                source,
+                translated,
+                target=target,
+                track_index=track,
+                lang=lang,
+                project=project,
+                interactive=not non_interactive,
+                max_chars=max_chars,
+                use_llm=not no_llm,
+                apply=apply,
+                provider=provider,
+                model=model,
+                reasoning=reasoning,
+                max_retries=retries,
+            )
     except runtime._EXPECTED_ERRORS as exc:
         runtime.console.print(f"[red]Error:[/red] {exc}")
         raise typer.Exit(code=1)
@@ -147,18 +148,19 @@ def tighten(
         max_chars_per_second=max_cps,
     )
     try:
-        result = runtime.tighten_subtitle(
-            translated,
-            target=target,
-            project=project,
-            limits=limits,
-            use_llm=not no_llm,
-            apply=apply,
-            provider=provider,
-            model=model,
-            reasoning=reasoning,
-            max_retries=retries,
-        )
+        with runtime.console.status("Checking readability…", spinner="dots"):
+            result = runtime.tighten_subtitle(
+                translated,
+                target=target,
+                project=project,
+                limits=limits,
+                use_llm=not no_llm,
+                apply=apply,
+                provider=provider,
+                model=model,
+                reasoning=reasoning,
+                max_retries=retries,
+            )
     except runtime._EXPECTED_ERRORS as exc:
         runtime.console.print(f"[red]Error:[/red] {exc}")
         raise typer.Exit(code=1)
