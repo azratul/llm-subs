@@ -8,6 +8,11 @@ All notable changes to this project are documented here. The format follows
 
 ## [0.2.1] - 2026-06-23
 
+### Added
+- `batch --pre-analyze` now shows a per-episode results table after the analysis phase, listing
+  each episode's status and the full error message for failures — identical in style to the
+  translation summary table.
+
 ### Fixed
 - Analysis prompt now instructs the model to use the most complete form of a character's name
   (family + given for Japanese names; consistent with any prior-known entry), preventing the same
@@ -16,6 +21,10 @@ All notable changes to this project are documented here. The format follows
 - Analysis prompt now explicitly requests all prose fields (episode_summary, speech_style,
   relationship descriptions) in the target language, so the memory files no longer mix languages
   when the model arbitrarily chose English for some episodes.
+- CLI provider adapters (`agy`, `codex`, `opencode`) now raise a proper `ProviderError` when the
+  subprocess exits successfully but produces no output, including any stderr content in the message.
+  Previously an empty stdout was silently passed through and surfaced as a confusing
+  "not valid JSON: … char 0" error with no hint of the real cause (rate limit, timeout, etc.).
 
 ## [0.2.0] - 2026-06-23
 

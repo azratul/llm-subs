@@ -44,6 +44,12 @@ def _run(binary_name: str, cmd: list[str], prompt: str | None, timeout: int) -> 
             f"`{binary_name}` failed (exit {proc.returncode}): {detail}",
             retryable=backend_error_is_retryable(detail),
         )
+    if not proc.stdout.strip():
+        detail = proc.stderr.strip() or "no output on stdout"
+        raise ProviderError(
+            f"`{binary_name}` produced no output: {detail}",
+            retryable=True,
+        )
     return proc.stdout
 
 
