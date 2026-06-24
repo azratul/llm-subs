@@ -127,12 +127,12 @@ def build_memory_rules(pm: ProjectMemory, ctx: EpisodeContext | None) -> MemoryR
     # Deduplicate bidirectional pairs (A→B and B→A are stored separately but carry the same
     # semantic information). Keep the most informative description (longest wins).
     pair_rels: dict[frozenset, tuple[str, str, str]] = {}
-    for ch in pm.memory.characters:
-        for other, rel in ch.relationships.items():
-            pair: frozenset = frozenset({ch.name.casefold(), other.casefold()})
+    for cm in pm.memory.characters:
+        for other, rel in cm.relationships.items():
+            pair: frozenset = frozenset({cm.name.casefold(), other.casefold()})
             existing = pair_rels.get(pair)
             if existing is None or len(rel) > len(existing[2]):
-                pair_rels[pair] = (ch.name, other, rel)
+                pair_rels[pair] = (cm.name, other, rel)
     relationships = list(pair_rels.values())
 
     return MemoryRules(

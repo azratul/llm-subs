@@ -298,7 +298,9 @@ def test_build_memory_rules_deduplicates_bidirectional_relationships():
     # 3 raw entries (Akira→Yumi, Akira→Kenji, Yumi→Akira) → 2 unique pairs after dedup.
     assert len(mr.relationships) == 2
     # The Akira-Yumi pair keeps the longer description.
-    akira_yumi = next((r for a, b, r in mr.relationships if "Akira" in (a, b) and "Yumi" in (a, b)), None)
+    akira_yumi = next(
+        (r for a, b, r in mr.relationships if "Akira" in (a, b) and "Yumi" in (a, b)), None
+    )
     assert akira_yumi == "best friends since childhood"
 
 

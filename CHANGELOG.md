@@ -6,6 +6,23 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.3] - 2026-06-24
+
+### Fixed
+- Translation prompts no longer grow unboundedly with series history. Relationship pairs
+  injected per block are now capped at 20 (speaker-involved pairs first, then text-mentioned),
+  so token cost stays constant regardless of how many episodes have been analyzed. Bidirectional
+  pairs (A→B stored in A's entry AND B→A stored in B's entry) are now deduplicated before
+  injection, keeping the most informative description; this halved the raw pair count for
+  typical long-running series. Together the two changes reduce relationship context overhead
+  by up to 82% for a fully-analyzed series.
+- Fixed two mypy errors introduced in 0.2.2: a variable name reuse across `EpisodeCharacter`
+  and `CharacterMemory` loop variables in `build_memory_rules` (now uses distinct names), and
+  a mismatched callback type annotation for `alias_confirm` in `compact_memory` (now typed as
+  `Callable[..., str]` instead of `ConflictPrompt`).
+- ETA in `batch` output now uses exponential moving average (α=0.3) instead of a simple mean,
+  so a single slow episode does not skew the estimate for the rest of the run.
+
 ## [0.2.2] - 2026-06-23
 
 ### Added
@@ -295,7 +312,8 @@ First tagged release.
   (`extra="forbid"`) and validate on assignment; unexpected LLM gender values fold to `unknown`
   instead of entering memory.
 
-[Unreleased]: https://github.com/azratul/translate-subs/compare/v0.2.2...HEAD
+[Unreleased]: https://github.com/azratul/translate-subs/compare/v0.2.3...HEAD
+[0.2.3]: https://github.com/azratul/translate-subs/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/azratul/translate-subs/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/azratul/translate-subs/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/azratul/translate-subs/compare/v0.1.0...v0.2.0

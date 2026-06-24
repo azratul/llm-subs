@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 
 from translate_subs import config
@@ -194,7 +195,7 @@ def compact_memory(
     model: str | None = None,
     reasoning: str | None = None,
     max_retries: int = 2,
-    alias_confirm: ConflictPrompt | None = None,
+    alias_confirm: Callable[..., str] | None = None,
     ai_runner_factory=None,
 ) -> CompactMemoryResult:
     project_path = memory_root(project, target)
