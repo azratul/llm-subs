@@ -273,6 +273,64 @@ def test_rules_use_speech_style_and_episode_summary():
     assert "Yumi" not in akira
 
 
+def test_build_memory_rules_deduplicates_bidirectional_relationships():
+    """Bidirectional pairs (A→B stored in A's rels AND B→A stored in B's rels) are stored once."""
+    pm = ProjectMemory(
+        project_dir=".",
+        memory=SeriesMemory(
+            characters=[
+                CharacterMemory(
+                    name="Akira",
+                    gender="male",
+                    relationships={"Yumi": "close friends", "Kenji": "rivals"},
+                ),
+                CharacterMemory(
+                    name="Yumi",
+                    gender="female",
+                    # Both directions exist; the longer description should win.
+                    relationships={"Akira": "best friends since childhood"},
+                ),
+            ]
+        ),
+        style_guide=StyleGuide(),
+    )
+    mr = build_memory_rules(pm, None)
+    # 3 raw entries (Akira→Yumi, Akira→Kenji, Yumi→Akira) → 2 unique pairs after dedup.
+    assert len(mr.relationships) == 2
+    # The Akira-Yumi pair keeps the longer description.
+    akira_yumi = next((r for a, b, r in mr.relationships if "Akira" in (a, b) and "Yumi" in (a, b)), None)
+    assert akira_yumi == "best friends since childhood"
+
+
+def test_rules_for_text_caps_relationship_count():
+    """When many relationships are relevant, at most _MAX_RELATIONSHIPS_PER_BLOCK are injected."""
+    from translate_subs.memory.rules import _MAX_RELATIONSHIPS_PER_BLOCK
+
+    # Build more relationships than the cap by creating many characters all related to "Hero".
+    chars = [CharacterMemory(name="Hero", gender="male")]
+    for i in range(_MAX_RELATIONSHIPS_PER_BLOCK + 10):
+        chars.append(
+            CharacterMemory(
+                name=f"Char{i}",
+                gender="male",
+                relationships={"Hero": f"relation {i}"},
+            )
+        )
+    pm = ProjectMemory(
+        project_dir=".",
+        memory=SeriesMemory(characters=chars),
+        style_guide=StyleGuide(),
+    )
+    mr = build_memory_rules(pm, None)
+    # Build text that mentions every character so all are "present".
+    text = "Hero " + " ".join(f"Char{i}" for i in range(_MAX_RELATIONSHIPS_PER_BLOCK + 10))
+    rules = rules_for_text(mr, text, ["Hero"])
+    rel_rule = next((r for r in rules if r.startswith("Relationships:")), "")
+    # Count pairs in the injected rule.
+    injected = rel_rule.count(":") - 1  # each "A-B: rel" has one colon for the separator
+    assert injected <= _MAX_RELATIONSHIPS_PER_BLOCK
+
+
 def test_compact_project_memory_prunes_and_merges():
     pm = ProjectMemory(
         project_dir=".",

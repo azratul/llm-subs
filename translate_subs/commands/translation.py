@@ -30,18 +30,24 @@ def _fmt_duration(seconds: float) -> str:
 
 def _make_episode_callback(console, label: str = ""):
     """Return an on_episode callback that tracks timing and prints ETA hints."""
+    _EMA_ALPHA = 0.3
     start = [time.perf_counter()]  # mutable cell; [0] = time when current episode began
     durations: list[float] = []
+    ema: list[float] = []  # [0] holds the current EMA value once initialised
 
     def on_episode(index: int, total: int, path: Path) -> None:
         now = time.perf_counter()
         hint = ""
         if index > 1:
-            durations.append(now - start[0])
-            avg = sum(durations) / len(durations)
+            elapsed = now - start[0]
+            durations.append(elapsed)
+            if not ema:
+                ema.append(elapsed)
+            else:
+                ema[0] = _EMA_ALPHA * elapsed + (1 - _EMA_ALPHA) * ema[0]
             remaining = total - index + 1
-            eta = _fmt_duration(remaining * avg)
-            hint = f"  [dim](prev {_fmt_duration(durations[-1])}, ETA ~{eta})[/dim]"
+            eta = _fmt_duration(remaining * ema[0])
+            hint = f"  [dim](prev {_fmt_duration(elapsed)}, ETA ~{eta})[/dim]"
         start[0] = now
         prefix = f"[Analyze {index}/{total}]" if label else f"[{index}/{total}]"
         console.print(f"[cyan]\\{prefix}[/cyan] {path.name}{hint}")

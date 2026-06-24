@@ -124,11 +124,17 @@ def build_memory_rules(pm: ProjectMemory, ctx: EpisodeContext | None) -> MemoryR
         if cm.speech_style and cm.speech_style.strip():
             speech_styles[cm.name] = cm.speech_style.strip()
 
-    relationships = [
-        (ch.name, other, rel)
-        for ch in pm.memory.characters
-        for other, rel in ch.relationships.items()
-    ]
+    # Deduplicate bidirectional pairs (A→B and B→A are stored separately but carry the same
+    # semantic information). Keep the most informative description (longest wins).
+    pair_rels: dict[frozenset, tuple[str, str, str]] = {}
+    for ch in pm.memory.characters:
+        for other, rel in ch.relationships.items():
+            pair: frozenset = frozenset({ch.name.casefold(), other.casefold()})
+            existing = pair_rels.get(pair)
+            if existing is None or len(rel) > len(existing[2]):
+                pair_rels[pair] = (ch.name, other, rel)
+    relationships = list(pair_rels.values())
+
     return MemoryRules(
         base=base,
         glossary=glossary,
@@ -136,6 +142,12 @@ def build_memory_rules(pm: ProjectMemory, ctx: EpisodeContext | None) -> MemoryR
         relationships=relationships,
         speech_styles=speech_styles,
     )
+
+
+# Maximum relationship pairs injected per block. Speaker-involved pairs are prioritised;
+# beyond this limit, lower-priority pairs are dropped. This keeps prompts bounded regardless
+# of how large the series memory grows across many episodes.
+_MAX_RELATIONSHIPS_PER_BLOCK = 20
 
 
 def rules_for_text(mr: MemoryRules, text: str, speakers: Iterable[str]) -> list[str]:
@@ -164,8 +176,17 @@ def rules_for_text(mr: MemoryRules, text: str, speakers: Iterable[str]) -> list[
         listing = "; ".join(f"{name}: {s}" for name, s in speech.items())
         rules.append(f"Speech style by character: {listing}.")
 
-    relationships = [f"{a}-{b}: {r}" for a, b, r in mr.relationships if present(a) or present(b)]
-    if relationships:
-        rules.append("Relationships: " + "; ".join(relationships) + ".")
+    def _rel_priority(e: tuple[str, str, str]) -> int:
+        a_spk = e[0].casefold() in present_speakers
+        b_spk = e[1].casefold() in present_speakers
+        return 0 if (a_spk or b_spk) else 1
+
+    # Speaker-involved pairs first (priority 0), then text-mentioned (priority 1); cap total.
+    relevant = sorted(
+        [(a, b, r) for a, b, r in mr.relationships if present(a) or present(b)],
+        key=_rel_priority,
+    )[:_MAX_RELATIONSHIPS_PER_BLOCK]
+    if relevant:
+        rules.append("Relationships: " + "; ".join(f"{a}-{b}: {r}" for a, b, r in relevant) + ".")
 
     return rules
