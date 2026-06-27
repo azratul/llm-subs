@@ -21,53 +21,40 @@ def pair_lines(
     source_subs=None,
     compare_styles: bool = False,
 ) -> tuple[list[ReviewLine], list[Finding]]:
-    """Pair source/target events and report structural mismatches."""
-    events = target_subs.events
-    n = min(len(units), len(events))
-    lines = [
-        ReviewLine(
-            id=units[i].id,
-            event_index=i,
-            speaker=units[i].speaker,
-            source=units[i].text,
-            target=events[i].plaintext,
-        )
-        for i in range(n)
-    ]
-    findings: list[Finding] = [
-        Finding(
-            id=units[i].id,
-            kind="missing_id",
-            message="No translated line at this position.",
-            current="",
-        )
-        for i in range(n, len(units))
-    ]
-    findings.extend(
-        Finding(
-            id=f"T{i + 1:04d}",
-            kind="extra_event",
-            message="Translated file contains an event with no source line at this position.",
-            current=events[i].plaintext,
-        )
-        for i in range(n, len(events))
-    )
+    """Pair source/target events by event_index and report structural mismatches.
 
-    duplicate_ids = sorted(
-        unit_id for unit_id, count in Counter(unit.id for unit in units).items() if count > 1
-    )
-    if duplicate_ids:
-        findings.append(
-            Finding(
-                scope="global",
-                kind="duplicate_id",
-                message=f"Source contains duplicate stable IDs: {duplicate_ids[:5]}.",
+    Lookup uses unit.event_index rather than sequential position so that non-translatable
+    events preserved verbatim in the translated ASS (drawings, comments) don't shift the
+    pairing and cause source unit N to be compared against the wrong translated event.
+    """
+    events = target_subs.events
+    lines: list[ReviewLine] = []
+    findings: list[Finding] = []
+    unit_indices: set[int] = set()
+
+    for unit in units:
+        idx = unit.event_index
+        if idx >= len(events):
+            findings.append(
+                Finding(
+                    id=unit.id,
+                    kind="missing_id",
+                    message="No translated event at this position.",
+                    current="",
+                )
+            )
+            continue
+        event = events[idx]
+        unit_indices.add(idx)
+        lines.append(
+            ReviewLine(
+                id=unit.id,
+                event_index=idx,
+                speaker=unit.speaker,
+                source=unit.text,
+                target=event.plaintext,
             )
         )
-
-    for i in range(n):
-        unit = units[i]
-        event = events[i]
         if (
             abs(unit.start - event.start) > ALIGN_TOLERANCE_MS
             or abs(unit.end - event.end) > ALIGN_TOLERANCE_MS
@@ -97,6 +84,31 @@ def pair_lines(
                     current=event.plaintext,
                 )
             )
+
+    # Events in the translated file that have visible text but no corresponding source unit
+    # are unexpected (not drawings/comments — those have no plaintext).
+    for i, event in enumerate(events):
+        if i not in unit_indices and event.plaintext.strip():
+            findings.append(
+                Finding(
+                    id=f"T{i + 1:04d}",
+                    kind="extra_event",
+                    message="Translated file contains a text event with no source line at this index.",
+                    current=event.plaintext,
+                )
+            )
+
+    duplicate_ids = sorted(
+        unit_id for unit_id, count in Counter(unit.id for unit in units).items() if count > 1
+    )
+    if duplicate_ids:
+        findings.append(
+            Finding(
+                scope="global",
+                kind="duplicate_id",
+                message=f"Source contains duplicate stable IDs: {duplicate_ids[:5]}.",
+            )
+        )
 
     source_is_chronological = all(
         units[i].start >= units[i - 1].start for i in range(1, len(units))

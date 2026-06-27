@@ -156,9 +156,7 @@ def validate_output(
         errors.append(f"{len(mismatched)} timestamp mismatches by index (e.g. {mismatched[:5]})")
 
     unit_indices = {u.event_index for u in units}
-    empty = sum(
-        1 for i, e in enumerate(events) if i in unit_indices and not e.plaintext.strip()
-    )
+    empty = sum(1 for i, e in enumerate(events) if i in unit_indices and not e.plaintext.strip())
     if empty:
         warnings.append(f"{empty} translated events ended up empty in the output")
 
@@ -166,8 +164,7 @@ def validate_output(
         style_lost = [
             unit.id
             for unit in units
-            if unit.event_index < len(events)
-            and events[unit.event_index].style != unit.style
+            if unit.event_index < len(events) and events[unit.event_index].style != unit.style
         ]
         if style_lost:
             errors.append(f"{len(style_lost)} events lost their style (e.g. {style_lost[:5]})")

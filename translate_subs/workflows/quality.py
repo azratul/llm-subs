@@ -146,14 +146,11 @@ def review_translation(
     out_path = review_path(project_name, target, episode_name)
     atomic_write_text(out_path, render_markdown(report, manifest))
 
-    aligned = (
-        len(target_subs.events) == len(units)
-        and len({unit.id for unit in units}) == len(units)
-        and all(
-            abs(unit.start - event.start) <= ALIGN_TOLERANCE_MS
-            and abs(unit.end - event.end) <= ALIGN_TOLERANCE_MS
-            for unit, event in zip(units, target_subs.events, strict=False)
-        )
+    aligned = len({unit.id for unit in units}) == len(units) and all(
+        unit.event_index < len(target_subs.events)
+        and abs(unit.start - target_subs.events[unit.event_index].start) <= ALIGN_TOLERANCE_MS
+        and abs(unit.end - target_subs.events[unit.event_index].end) <= ALIGN_TOLERANCE_MS
+        for unit in units
     )
     n_applied = 0
     auto_fixes = report.auto_fixes()
@@ -178,8 +175,12 @@ def review_translation(
                 and fix.id not in seen_ids
                 and len(suggestions_by_id.get(fix.id or "", set())) == 1
             ):
-                old_text = target_subs.events[index].plaintext
-                planned_fixes.append((fix.id or "", old_text, fix.suggested))
+                actual_text = target_subs.events[index].plaintext
+                # Skip fixes where the translated text changed since the review was generated:
+                # applying a fix derived from stale context could corrupt a line edited by hand.
+                if fix.current is not None and actual_text != fix.current:
+                    continue
+                planned_fixes.append((fix.id or "", actual_text, fix.suggested))
                 seen_ids.add(fix.id or "")
         if apply:
             for fix_id, old_text, new_text in planned_fixes:
