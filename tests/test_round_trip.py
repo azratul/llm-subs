@@ -203,7 +203,7 @@ def test_validation_compares_duplicate_timestamps_by_position(sample_ass, tmp_pa
 
     result = validate_output(path, units)
     assert not result.ok
-    assert any("timestamp mismatches by position" in error for error in result.errors)
+    assert any("timestamp mismatches by index" in error for error in result.errors)
 
 
 def test_validation_tolerates_ass_centisecond_rounding(tmp_path):
@@ -225,3 +225,21 @@ def test_validation_tolerates_ass_centisecond_rounding(tmp_path):
 
     result = validate_output(path, units)
     assert result.ok, result.errors
+
+
+def test_ass_output_preserves_drawing_events(sample_ass, tmp_path):
+    # sample_ass has 6 events: 3 translatable + 1 comment + 1 drawing + 1 empty.
+    # For ASS output the workflow skips prune_to_units, so all 6 survive.
+    units = extract_units(sample_ass)
+    apply_translations(sample_ass, units, {u.id: u.text for u in units})
+    # No prune_to_units call — that's the point.
+    out = tmp_path / "out.ass"
+    document.save(sample_ass, out, fmt="ass")
+
+    reloaded = pysubs2.load(str(out))
+    assert len(reloaded.events) == 6  # all original events preserved
+
+    result = validate_output(out, units, check_fidelity=True)
+    assert result.ok, result.errors
+    # Drawing events must not trigger the empty-translation warning.
+    assert not result.warnings

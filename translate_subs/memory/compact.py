@@ -123,29 +123,30 @@ def detect_character_aliases(runner: Runner, characters: list[CharacterMemory]) 
     from translate_subs.ai.claude_cli import extract_json
     from translate_subs.ai.provider import ProviderError
 
+    names = {ch.name.casefold() for ch in characters}
     try:
         raw = runner(prompt)
         data = json.loads(extract_json(raw))
         pairs = data.get("duplicates", [])
-    except (json.JSONDecodeError, KeyError, TypeError) as exc:
+        if not isinstance(pairs, list):
+            raise TypeError(f"expected a list of duplicates, got {type(pairs).__name__!r}")
+        results: list[AliasMatch] = []
+        for pair in pairs:
+            canonical = str(pair.get("canonical", "")).strip()
+            alias = str(pair.get("alias", "")).strip()
+            reason = str(pair.get("reason", "")).strip()
+            if (
+                canonical
+                and alias
+                and canonical != alias
+                and canonical.casefold() in names
+                and alias.casefold() in names
+            ):
+                results.append(AliasMatch(canonical=canonical, alias=alias, reason=reason))
+    except (json.JSONDecodeError, KeyError, TypeError, AttributeError) as exc:
         raise ProviderError(
             f"Alias detection reply was not valid JSON: {exc}", retryable=True
         ) from exc
-
-    names = {ch.name.casefold() for ch in characters}
-    results: list[AliasMatch] = []
-    for pair in pairs:
-        canonical = str(pair.get("canonical", "")).strip()
-        alias = str(pair.get("alias", "")).strip()
-        reason = str(pair.get("reason", "")).strip()
-        if (
-            canonical
-            and alias
-            and canonical != alias
-            and canonical.casefold() in names
-            and alias.casefold() in names
-        ):
-            results.append(AliasMatch(canonical=canonical, alias=alias, reason=reason))
     return results
 
 

@@ -124,10 +124,19 @@ def validate_output(
         return ValidationResult(ok=False, errors=[f"output is not parseable: {exc}"])
 
     events = list(out.events)
-    if len(events) != len(units):
+    # Units carry their original event_index; the output may contain extra non-translatable
+    # events (drawings, comments) preserved verbatim for ASS output, so compare by index
+    # rather than by total count.
+    max_unit_idx = max((u.event_index for u in units), default=-1)
+    if len(events) <= max_unit_idx:
         errors.append(
-            f"output has {len(events)} events, expected {len(units)} "
-            "(comments/drawings may have been dropped)."
+            f"output has {len(events)} events but translated unit at index {max_unit_idx} "
+            "is missing — the file was truncated."
+        )
+    elif len(events) < len(units):
+        errors.append(
+            f"output has {len(events)} events, expected at least {len(units)} "
+            "(some translated events are missing)."
         )
 
     # .ass/.ssa store time in centiseconds, so a millisecond-precision source (e.g. an
@@ -136,36 +145,39 @@ def validate_output(
     tolerance = 10 if Path(srt_path).suffix.lower() in (".ass", ".ssa") else 0
     mismatched = [
         unit.id
-        for unit, event in zip(units, events, strict=False)
-        if abs(unit.start - event.start) > tolerance or abs(unit.end - event.end) > tolerance
+        for unit in units
+        if unit.event_index < len(events)
+        and (
+            abs(unit.start - events[unit.event_index].start) > tolerance
+            or abs(unit.end - events[unit.event_index].end) > tolerance
+        )
     ]
     if mismatched:
-        errors.append(f"{len(mismatched)} timestamp mismatches by position (e.g. {mismatched[:5]})")
+        errors.append(f"{len(mismatched)} timestamp mismatches by index (e.g. {mismatched[:5]})")
 
-    empty = sum(1 for e in events if not e.plaintext.strip())
+    unit_indices = {u.event_index for u in units}
+    empty = sum(
+        1 for i, e in enumerate(events) if i in unit_indices and not e.plaintext.strip()
+    )
     if empty:
-        warnings.append(f"{empty} events ended up empty in the output")
+        warnings.append(f"{empty} translated events ended up empty in the output")
 
-    if (
-        check_fidelity
-        and len(events) == len(units)
-        and Path(srt_path).suffix.lower()
-        in (
-            ".ass",
-            ".ssa",
-        )
-    ):
+    if check_fidelity and Path(srt_path).suffix.lower() in (".ass", ".ssa"):
         style_lost = [
-            unit.id for unit, event in zip(units, events, strict=False) if event.style != unit.style
+            unit.id
+            for unit in units
+            if unit.event_index < len(events)
+            and events[unit.event_index].style != unit.style
         ]
         if style_lost:
             errors.append(f"{len(style_lost)} events lost their style (e.g. {style_lost[:5]})")
 
         tags_lost = [
             unit.id
-            for unit, event in zip(units, events, strict=False)
-            if (tokens := _lead_tokens(unit.lead_tags))
-            and any(token not in (event.text or "") for token in tokens)
+            for unit in units
+            if unit.event_index < len(events)
+            and (tokens := _lead_tokens(unit.lead_tags))
+            and any(token not in (events[unit.event_index].text or "") for token in tokens)
         ]
         if tags_lost:
             errors.append(

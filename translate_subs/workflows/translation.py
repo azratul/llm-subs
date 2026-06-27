@@ -197,8 +197,10 @@ def translate_subtitle(
         raise PipelineError("Invalid translation: " + "; ".join(mapping_check.errors))
 
     apply_translations(subs, units, translations)
-    prune_to_units(subs, units)
     if fmt == "srt":
+        # SRT has no positioning or drawing support: prune non-translatable events (drawings,
+        # comments) so flatten_overlaps doesn't see empty cues from stripped override blocks.
+        prune_to_units(subs, units)
         flatten_overlaps(subs)
 
     def validate_rendered(path: Path) -> ValidationResult:

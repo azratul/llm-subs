@@ -6,7 +6,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from translate_subs.io.media_probe import SubtitleTrack, probe_subtitle_tracks
+from translate_subs.io.media_probe import MediaToolError, SubtitleTrack, probe_subtitle_tracks
 from translate_subs.io.track_extractor import extract_track
 from translate_subs.naming import ISO_639_1
 
@@ -224,39 +224,59 @@ def resolve_source(
 
     if suffix in MEDIA_EXTS:
         sidecar = _find_sidecar(path, lang)
+        fallback_sidecar: tuple[Path, str | None] | None = None
         if sidecar is not None:
             selected = _sidecar_lang(sidecar)
+            if _is_lang_fallback(lang, selected):
+                # Wrong-language sidecar: keep as last resort and try the container first.
+                fallback_sidecar = (sidecar, selected)
+            else:
+                # Exact-match or untagged sidecar: prefer it over embedded tracks.
+                return ResolvedSource(
+                    subtitle_path=sidecar,
+                    origin=path,
+                    was_extracted=False,
+                    selected_lang=selected,
+                    lang_fallback=False,
+                )
+        try:
+            tracks = probe_subtitle_tracks(path)
+            track = select_track(
+                tracks, lang=lang, track_index=track_index, interactive=interactive
+            )
+            selected = normalize_lang(track.language)
             fallback = _is_lang_fallback(lang, selected)
             if strict_lang and fallback:
                 raise SourceError(
-                    f"No '{lang}' subtitle next to {path.name} (closest: {sidecar.name}). "
-                    "Pass a different --lang or drop --strict-lang."
+                    f"No '{lang}' subtitle track in {path.name} "
+                    f"(closest: #{track.rel_index}, lang={track.language or '?'}). "
+                    "Pass a different --lang/--track or drop --strict-lang."
                 )
+            extracted = extract_track(path, track, work_dir)
             return ResolvedSource(
-                subtitle_path=sidecar,
+                subtitle_path=extracted,
                 origin=path,
-                was_extracted=False,
+                was_extracted=True,
+                track=track,
                 selected_lang=selected,
                 lang_fallback=fallback,
             )
-        tracks = probe_subtitle_tracks(path)
-        track = select_track(tracks, lang=lang, track_index=track_index, interactive=interactive)
-        selected = normalize_lang(track.language)
-        fallback = _is_lang_fallback(lang, selected)
-        if strict_lang and fallback:
-            raise SourceError(
-                f"No '{lang}' subtitle track in {path.name} "
-                f"(closest: #{track.rel_index}, lang={track.language or '?'}). "
-                "Pass a different --lang/--track or drop --strict-lang."
-            )
-        extracted = extract_track(path, track, work_dir)
-        return ResolvedSource(
-            subtitle_path=extracted,
-            origin=path,
-            was_extracted=True,
-            track=track,
-            selected_lang=selected,
-            lang_fallback=fallback,
-        )
+        except (SourceError, MediaToolError):
+            if fallback_sidecar is not None:
+                sidecar, selected = fallback_sidecar
+                if strict_lang:
+                    raise SourceError(
+                        f"No '{lang}' subtitle next to {path.name} (closest sidecar: "
+                        f"{sidecar.name}) and no matching embedded track. "
+                        "Pass a different --lang/--track or drop --strict-lang."
+                    ) from None
+                return ResolvedSource(
+                    subtitle_path=sidecar,
+                    origin=path,
+                    was_extracted=False,
+                    selected_lang=selected,
+                    lang_fallback=True,
+                )
+            raise
 
     raise SourceError(f"Unsupported extension: {suffix}")
