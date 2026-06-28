@@ -504,3 +504,168 @@ def test_review_apply_rejects_empty_safe_fix(tmp_path, monkeypatch):
 
     assert result.n_applied == 0
     assert pysubs2.load(str(translated_path)).events[0].plaintext == "Alicia"
+
+
+# ---------------------------------------------------------------------------
+# pair_lines regression tests: ASS comment/drawing interleaving and SRT sequential
+# ---------------------------------------------------------------------------
+
+
+def _make_unit(id, event_index, start, end, text, style="D"):
+    from translate_subs.domain.models import TranslatableUnit
+
+    return TranslatableUnit(
+        id=id, event_index=event_index, start=start, end=end, style=style, text=text
+    )
+
+
+def test_pair_lines_ass_comment_with_text_not_extra_event():
+    # A Comment event with visible text preserved verbatim in an ASS translation must not
+    # be reported as extra_event; only Dialogue events without a source unit qualify.
+    from translate_subs.review.structure import pair_lines
+
+    units = [
+        _make_unit("0001", 0, 1000, 2000, "Hello"),
+        _make_unit("0002", 2, 3000, 4000, "Goodbye"),
+    ]
+    target = pysubs2.SSAFile()
+    target.events.append(pysubs2.SSAEvent(start=1000, end=2000, text="Hola"))  # idx 0
+    comment = pysubs2.SSAEvent(start=2100, end=2500, text="staff note")  # idx 1 – Comment
+    comment.is_comment = True
+    target.events.append(comment)
+    target.events.append(pysubs2.SSAEvent(start=3000, end=4000, text="Adiós"))  # idx 2
+
+    lines, findings = pair_lines(units, target)
+
+    assert len(lines) == 2
+    assert lines[0].target == "Hola"
+    assert lines[1].target == "Adiós"
+    assert not any(f.kind == "extra_event" for f in findings)
+
+
+def test_pair_lines_ass_interleaved_drawing_correct_pairing():
+    # A drawing (empty plaintext) interleaved between two translatable events must not
+    # confuse event_index-based pairing or produce spurious findings.
+    from translate_subs.review.structure import pair_lines
+
+    units = [
+        _make_unit("0001", 0, 1000, 2000, "Line 1"),
+        _make_unit("0002", 2, 3000, 4000, "Line 2"),  # note: index 2, not 1
+    ]
+    target = pysubs2.SSAFile()
+    target.events.append(pysubs2.SSAEvent(start=1000, end=2000, text="Línea 1"))  # idx 0
+    target.events.append(  # idx 1 — drawing, empty plaintext
+        pysubs2.SSAEvent(start=2100, end=2500, text=r"{\p1}m 0 0 l 10 0 10 10{\p0}")
+    )
+    target.events.append(pysubs2.SSAEvent(start=3000, end=4000, text="Línea 2"))  # idx 2
+
+    lines, findings = pair_lines(units, target)
+
+    assert len(lines) == 2
+    assert lines[0].target == "Línea 1"
+    assert lines[1].target == "Línea 2"
+    assert not any(f.kind in ("extra_event", "missing_id") for f in findings)
+
+
+def test_pair_lines_srt_sequential_with_shifted_event_index():
+    # After prune_to_units the SRT has events at positions 0,1 but the source units carry
+    # event_index 0 and 2 (a drawing was at index 1). Sequential mode must pair by position
+    # instead of event_index so both lines are matched correctly.
+    from translate_subs.review.structure import pair_lines
+
+    units = [
+        _make_unit("0001", 0, 1000, 2000, "Line 1"),
+        _make_unit("0002", 2, 3000, 4000, "Line 2"),  # event_index 2 ≠ SRT position 1
+    ]
+    target = pysubs2.SSAFile()
+    target.events.append(pysubs2.SSAEvent(start=1000, end=2000, text="Línea 1"))  # pos 0
+    target.events.append(pysubs2.SSAEvent(start=3000, end=4000, text="Línea 2"))  # pos 1
+
+    lines_seq, findings_seq = pair_lines(units, target, sequential=True)
+    lines_idx, findings_idx = pair_lines(units, target, sequential=False)
+
+    # Sequential mode: both units paired correctly.
+    assert len(lines_seq) == 2
+    assert lines_seq[0].target == "Línea 1"
+    assert lines_seq[1].target == "Línea 2"
+    assert not any(f.kind == "missing_id" for f in findings_seq)
+
+    # Index mode on the same SRT: unit with event_index=2 falls off the end (only 2 events).
+    assert any(f.kind == "missing_id" for f in findings_idx)
+
+
+def test_review_srt_resegmented_skips_llm(tmp_path, monkeypatch):
+    # When an SRT target has more events than source units (flatten_overlaps re-segmented it),
+    # the LLM must not be called — pairs would be mismatched — and a structural finding must
+    # explain the situation.
+    monkeypatch.setattr(config, "PROJECTS_DIR", tmp_path / "projects")
+
+    src = pysubs2.SSAFile()
+    src.events.append(pysubs2.SSAEvent(start=1000, end=4000, text="First."))
+    src.events.append(pysubs2.SSAEvent(start=2000, end=5000, text="Second."))
+    source_path = tmp_path / "ep.en.srt"
+    src.save(str(source_path), format_="srt")
+
+    # Simulate what flatten_overlaps produces: 2 source lines → 3 SRT segments.
+    resegmented = pysubs2.SSAFile()
+    resegmented.events.append(pysubs2.SSAEvent(start=1000, end=2000, text="First."))
+    resegmented.events.append(pysubs2.SSAEvent(start=2000, end=4000, text="First.\nSecond."))
+    resegmented.events.append(pysubs2.SSAEvent(start=4000, end=5000, text="Second."))
+    translated_path = tmp_path / "ep.es.srt"
+    resegmented.save(str(translated_path), format_="srt")
+
+    llm_called = []
+
+    def fake_runner(prompt: str) -> str:
+        llm_called.append(prompt)
+        return "[]"
+
+    result = pipeline.review_translation(
+        source_path,
+        translated_path,
+        project="Serie",
+        interactive=False,
+        apply=False,
+        runner=fake_runner,
+    )
+
+    assert not llm_called, "LLM must not be called for a re-segmented SRT"
+    kinds = {f.kind for f in result.report.findings}
+    assert "srt_resegmented" in kinds
+
+
+def test_review_srt_same_count_resegmented_skips_llm(tmp_path, monkeypatch):
+    # flatten_overlaps can produce the same number of cues as the source but with shifted
+    # timestamps (e.g. 3 overlapping sources → 3 different segments). The count check alone
+    # does not catch this; the timing-mismatch guard must trigger instead.
+    monkeypatch.setattr(config, "PROJECTS_DIR", tmp_path / "projects")
+
+    src = pysubs2.SSAFile()
+    src.events.append(pysubs2.SSAEvent(start=1000, end=4000, text="A."))
+    src.events.append(pysubs2.SSAEvent(start=2000, end=5000, text="B."))
+    src.events.append(pysubs2.SSAEvent(start=3000, end=6000, text="C."))
+    source_path = tmp_path / "ep.en.srt"
+    src.save(str(source_path), format_="srt")
+
+    # 3 source lines → 3 resegmented cues with different boundaries (same count, wrong times).
+    resegmented = pysubs2.SSAFile()
+    resegmented.events.append(pysubs2.SSAEvent(start=1000, end=2000, text="A."))
+    resegmented.events.append(pysubs2.SSAEvent(start=2000, end=3000, text="A.\nB."))
+    resegmented.events.append(pysubs2.SSAEvent(start=3000, end=6000, text="A.\nB.\nC."))
+    translated_path = tmp_path / "ep.es.srt"
+    resegmented.save(str(translated_path), format_="srt")
+
+    llm_called = []
+
+    result = pipeline.review_translation(
+        source_path,
+        translated_path,
+        project="Serie",
+        interactive=False,
+        apply=False,
+        runner=lambda p: llm_called.append(p) or "[]",
+    )
+
+    assert not llm_called, "LLM must not be called when timestamps are mismatched"
+    kinds = {f.kind for f in result.report.findings}
+    assert "srt_resegmented" in kinds

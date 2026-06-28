@@ -11,7 +11,14 @@ All notable changes to this project are documented here. The format follows
   position, so non-translatable ASS events (drawings, comments) preserved verbatim in the
   output no longer shift the pairing. For SRT targets (where `prune_to_units` and
   `flatten_overlaps` have removed those events) the pairing falls back to sequential
-  position. Comment events with visible text are no longer falsely reported as `extra_event`.
+  position. Comment events with visible text are no longer falsely reported as `extra_event`;
+  drawing events with non-empty path commands are also excluded from that check.
+- `review` on an SRT target that has been re-segmented by `flatten_overlaps` now skips the
+  LLM linguistic pass and surfaces a `srt_resegmented` structural finding instead. The guard
+  triggers on both a cue-count mismatch and on timestamp mismatches in the sequential
+  pairing, so it catches the case where `flatten_overlaps` produces the same number of cues
+  but with shifted boundaries. Running the LLM on misaligned pairs would produce meaningless
+  findings; the report advises reviewing the `.ass` output for precise analysis.
 - `review --apply` guards against stale fixes: a safe replacement is skipped when the
   translated line has been edited since the review was generated, preventing a fix derived
   from stale context from corrupting a hand-edited line.
@@ -29,6 +36,12 @@ All notable changes to this project are documented here. The format follows
 - Source language matching now recognises ISO 639-2/B codes reported by ffprobe (`rus`,
   `ara`, `pol`, `ces`, `hun`, `ukr`, `tur`, and ~45 more), mapping them to their ISO 639-1
   equivalents so track selection and sidecar matching work correctly for those languages.
+- `tighten --apply` no longer measures or rewrites ASS drawing events and comment events.
+  The readability loop now filters with `is_translatable`, so path commands inside `{\p1}`
+  blocks and staff annotation comments are never sent to the LLM or written back.
+- An explicit `--track` flag now bypasses sidecar discovery entirely. Previously a
+  language-matching sidecar would be returned before even probing the container, silently
+  ignoring the user's choice of embedded track.
 - Release workflow now runs the full test/lint/type-check suite and verifies that the pushed
   tag matches `pyproject.toml` version before building artifacts.
 

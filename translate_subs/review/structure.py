@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections import Counter
 
 from translate_subs.review.models import Finding, ReviewLine
+from translate_subs.subs.extractor import is_translatable
 
 ALIGN_TOLERANCE_MS = 10
 
@@ -139,10 +140,10 @@ def pair_lines(
                     )
                 )
 
-        # Only Dialogue events with visible text and no source unit are unexpected;
-        # Comment events in ASS are preserved verbatim and are not translation targets.
+        # Only translatable Dialogue events with no matching source unit are unexpected;
+        # drawings, comments and other non-translatables are preserved verbatim in ASS.
         for i, event in enumerate(events):
-            if i not in unit_indices and not event.is_comment and event.plaintext.strip():
+            if i not in unit_indices and is_translatable(event):
                 findings.append(
                     Finding(
                         id=f"T{i + 1:04d}",

@@ -227,3 +227,53 @@ def test_tighten_apply_preserves_ass_leading_tags(tmp_path, monkeypatch):
     event = pysubs2.load(str(ass)).events[0]
     assert event.plaintext == "Línea corta."
     assert event.text.startswith(r"{\an8\pos(640,100)\c&H00FF00&}")
+
+
+def test_tighten_skips_drawings_and_comments(tmp_path, monkeypatch):
+    # Drawing events and ASS comments must never be sent to the LLM or written back by
+    # --apply, even when their plaintext (drawing path commands / comment text) would
+    # trigger a readability metric.
+    monkeypatch.setattr(config, "PROJECTS_DIR", tmp_path / "projects")
+
+    subs = pysubs2.SSAFile()
+    # A real translatable line that is over the char/s limit.
+    subs.events.append(
+        pysubs2.SSAEvent(start=0, end=500, text="This is much too long for half a second budget.")
+    )
+    # A drawing whose path commands would look like long text if measured naively.
+    subs.events.append(
+        pysubs2.SSAEvent(
+            start=600, end=700, text=r"{\p1}m 0 0 l 100 0 100 100 0 100 c 0 0 50 50 100 100{\p0}"
+        )
+    )
+    # A comment with visible text that is also very long.
+    comment = pysubs2.SSAEvent(start=800, end=900, text="Staff comment: this line is very long.")
+    comment.is_comment = True
+    subs.events.append(comment)
+
+    ass = tmp_path / "ep.es.ass"
+    subs.save(str(ass))
+
+    flagged_ids: list[str] = []
+
+    def fake_runner(prompt: str) -> str:
+        # Record which IDs the LLM actually receives; drawing/comment IDs must not appear.
+        import re
+
+        flagged_ids.extend(re.findall(r"\[(\d{4})\]", prompt))
+        return json.dumps({"0001": "Short."})
+
+    result = pipeline.tighten_subtitle(
+        ass, project="Serie", apply=True, runner=fake_runner, target="es-latam"
+    )
+
+    # Only the translatable line (0001) is flagged and compacted; no drawing/comment IDs.
+    assert result.n_flagged == 1
+    assert result.n_applied == 1
+    assert all(id_ == "0001" for id_ in flagged_ids), f"unexpected IDs sent to LLM: {flagged_ids}"
+
+    reloaded = pysubs2.load(str(ass))
+    # Drawing and comment events are untouched.
+    assert r"\p1" in reloaded.events[1].text
+    assert reloaded.events[2].is_comment
+    assert reloaded.events[2].plaintext == "Staff comment: this line is very long."

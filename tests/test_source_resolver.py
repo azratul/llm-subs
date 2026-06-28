@@ -112,3 +112,37 @@ def test_embedded_track_is_extracted(tmp_path, monkeypatch):
     assert result.subtitle_path == extracted
     assert result.was_extracted
     assert result.track == track
+
+
+def test_explicit_track_overrides_sidecar(tmp_path, monkeypatch):
+    # When --track is given the sidecar must be ignored, even if it matches the language,
+    # because the user explicitly asked for a specific embedded track.
+    media = tmp_path / "episode.mkv"
+    media.touch()
+    sidecar = tmp_path / "episode.en.ass"
+    sidecar.write_text("[Events]\n", encoding="utf-8")
+
+    track = _track(0, lang="eng")
+    extracted = tmp_path / "work" / "episode.track0.srt"
+
+    probe_called = []
+
+    def fake_probe(path):
+        probe_called.append(path)
+        return [track]
+
+    def fake_extract(media_path, selected, work_dir):
+        extracted.parent.mkdir(parents=True)
+        extracted.touch()
+        return extracted
+
+    monkeypatch.setattr("translate_subs.io.source_resolver.probe_subtitle_tracks", fake_probe)
+    monkeypatch.setattr("translate_subs.io.source_resolver.extract_track", fake_extract)
+
+    result = resolve_source(
+        media, work_dir=tmp_path / "work", lang="en", track_index=0, interactive=False
+    )
+
+    assert probe_called, "ffprobe must be called when --track is specified"
+    assert result.subtitle_path == extracted
+    assert result.was_extracted

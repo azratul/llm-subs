@@ -20,12 +20,12 @@ from translate_subs.readability.metrics import (
 from translate_subs.readability.report import ReadabilityEntry
 from translate_subs.readability.report import render_markdown as render_readability_md
 from translate_subs.review.checks import DEFAULT_MAX_CHARS, run_deterministic_checks
-from translate_subs.review.models import ReviewReport
+from translate_subs.review.models import Finding, ReviewReport
 from translate_subs.review.report import render_markdown
 from translate_subs.review.reviewer import review_lines
 from translate_subs.review.structure import ALIGN_TOLERANCE_MS, pair_lines
 from translate_subs.subs import document
-from translate_subs.subs.extractor import extract_units
+from translate_subs.subs.extractor import extract_units, is_translatable
 from translate_subs.subs.reinserter import replace_visible_text
 from translate_subs.subs.validator import ValidationResult, validate_file, validate_output
 from translate_subs.workflows.models import PipelineError, ReviewResult, TightenResult
@@ -86,13 +86,34 @@ def review_translation(
 
     target_is_ass = translated_path.suffix.lower() in (".ass", ".ssa")
     compare_styles = source.subtitle_path.suffix.lower() in (".ass", ".ssa") and target_is_ass
+    sequential = not target_is_ass
     lines, structural = pair_lines(
         units,
         target_subs,
         source_subs=source_subs,
         compare_styles=compare_styles,
-        sequential=not target_is_ass,
+        sequential=sequential,
     )
+    # When sequential pairing yields a count mismatch or any timing mismatch,
+    # flatten_overlaps has re-segmented the SRT. Pairs are not 1:1 or are misaligned,
+    # so the LLM would compare wrong source/target texts. Skip the linguistic pass and
+    # surface a structural warning instead.
+    srt_resegmented = sequential and (
+        len(units) != len(target_subs.events)
+        or any(f.kind == "timing_mismatch" for f in structural)
+    )
+    if srt_resegmented:
+        structural.append(
+            Finding(
+                scope="global",
+                kind="srt_resegmented",
+                message=(
+                    f"SRT has {len(target_subs.events)} cues but the source has {len(units)} "
+                    "translatable lines — the file was likely re-segmented by flatten_overlaps. "
+                    "Review the .ass output for accurate linguistic analysis."
+                ),
+            )
+        )
 
     project_name, episode_name = project_episode(source, project)
     pm = ProjectMemory.load(memory_root(project_name, target))
@@ -117,7 +138,7 @@ def review_translation(
         names=names,
         max_chars=max_chars,
     )
-    if use_llm and lines:
+    if use_llm and lines and not srt_resegmented:
         findings += review_lines(
             lines,
             glossary=glossary,
@@ -233,6 +254,8 @@ def tighten_subtitle(
 
     flagged: list[FlaggedLine] = []
     for index, event in enumerate(subs.events):
+        if not is_translatable(event):
+            continue
         metrics = measure(event.plaintext, event.start, event.end)
         reasons = exceeds(metrics, limits)
         if reasons:

@@ -290,7 +290,9 @@ def resolve_source(
         return ResolvedSource(subtitle_path=path, origin=path, was_extracted=False)
 
     if suffix in MEDIA_EXTS:
-        sidecar = _find_sidecar(path, lang)
+        # An explicit --track flag means the user wants a specific embedded track; skip
+        # sidecar discovery so it cannot silently override the user's choice.
+        sidecar = _find_sidecar(path, lang) if track_index is None else None
         fallback_sidecar: tuple[Path, str | None] | None = None
         if sidecar is not None:
             selected = _sidecar_lang(sidecar)
