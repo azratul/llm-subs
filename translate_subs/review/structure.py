@@ -20,83 +20,137 @@ def pair_lines(
     *,
     source_subs=None,
     compare_styles: bool = False,
+    sequential: bool = False,
 ) -> tuple[list[ReviewLine], list[Finding]]:
-    """Pair source/target events by event_index and report structural mismatches.
+    """Pair source/target events and report structural mismatches.
 
-    Lookup uses unit.event_index rather than sequential position so that non-translatable
-    events preserved verbatim in the translated ASS (drawings, comments) don't shift the
+    ASS targets (sequential=False, default): lookup by unit.event_index so that
+    non-translatable events preserved verbatim (drawings, comments) don't shift the
     pairing and cause source unit N to be compared against the wrong translated event.
+
+    SRT targets (sequential=True): pair by position (units[i] ↔ events[i]) because
+    prune_to_units and flatten_overlaps have already removed non-translatable events and
+    may have re-segmented the timeline, so event_index no longer addresses a valid slot.
     """
     events = target_subs.events
     lines: list[ReviewLine] = []
     findings: list[Finding] = []
-    unit_indices: set[int] = set()
 
-    for unit in units:
-        idx = unit.event_index
-        if idx >= len(events):
-            findings.append(
-                Finding(
+    if sequential:
+        for pos, unit in enumerate(units):
+            if pos >= len(events):
+                findings.append(
+                    Finding(
+                        id=unit.id,
+                        kind="missing_id",
+                        message="No translated event at this position.",
+                        current="",
+                    )
+                )
+                continue
+            event = events[pos]
+            lines.append(
+                ReviewLine(
                     id=unit.id,
-                    kind="missing_id",
-                    message="No translated event at this position.",
-                    current="",
+                    event_index=pos,
+                    speaker=unit.speaker,
+                    source=unit.text,
+                    target=event.plaintext,
                 )
             )
-            continue
-        event = events[idx]
-        unit_indices.add(idx)
-        lines.append(
-            ReviewLine(
-                id=unit.id,
-                event_index=idx,
-                speaker=unit.speaker,
-                source=unit.text,
-                target=event.plaintext,
-            )
-        )
-        if (
-            abs(unit.start - event.start) > ALIGN_TOLERANCE_MS
-            or abs(unit.end - event.end) > ALIGN_TOLERANCE_MS
-        ):
-            findings.append(
-                Finding(
+            if (
+                abs(unit.start - event.start) > ALIGN_TOLERANCE_MS
+                or abs(unit.end - event.end) > ALIGN_TOLERANCE_MS
+            ):
+                findings.append(
+                    Finding(
+                        id=unit.id,
+                        kind="timing_mismatch",
+                        message=(
+                            f"Timing differs: source {unit.start}-{unit.end} ms, "
+                            f"target {event.start}-{event.end} ms."
+                        ),
+                        current=event.plaintext,
+                    )
+                )
+        for i in range(len(units), len(events)):
+            event = events[i]
+            if event.plaintext.strip():
+                findings.append(
+                    Finding(
+                        id=f"T{i + 1:04d}",
+                        kind="extra_event",
+                        message="Translated file has more text events than the source.",
+                        current=event.plaintext,
+                    )
+                )
+    else:
+        unit_indices: set[int] = set()
+        for unit in units:
+            idx = unit.event_index
+            if idx >= len(events):
+                findings.append(
+                    Finding(
+                        id=unit.id,
+                        kind="missing_id",
+                        message="No translated event at this position.",
+                        current="",
+                    )
+                )
+                continue
+            event = events[idx]
+            unit_indices.add(idx)
+            lines.append(
+                ReviewLine(
                     id=unit.id,
-                    kind="timing_mismatch",
-                    message=(
-                        f"Timing differs: source {unit.start}-{unit.end} ms, "
-                        f"target {event.start}-{event.end} ms."
-                    ),
-                    current=event.plaintext,
+                    event_index=idx,
+                    speaker=unit.speaker,
+                    source=unit.text,
+                    target=event.plaintext,
                 )
             )
-        if (
-            compare_styles
-            and source_subs is not None
-            and _style_signature(source_subs, source_subs.events[unit.event_index])
-            != _style_signature(target_subs, event)
-        ):
-            findings.append(
-                Finding(
-                    id=unit.id,
-                    kind="style_mismatch",
-                    message=f"ASS style differs: source '{unit.style}', target '{event.style}'.",
-                    current=event.plaintext,
+            if (
+                abs(unit.start - event.start) > ALIGN_TOLERANCE_MS
+                or abs(unit.end - event.end) > ALIGN_TOLERANCE_MS
+            ):
+                findings.append(
+                    Finding(
+                        id=unit.id,
+                        kind="timing_mismatch",
+                        message=(
+                            f"Timing differs: source {unit.start}-{unit.end} ms, "
+                            f"target {event.start}-{event.end} ms."
+                        ),
+                        current=event.plaintext,
+                    )
                 )
-            )
+            if (
+                compare_styles
+                and source_subs is not None
+                and _style_signature(source_subs, source_subs.events[unit.event_index])
+                != _style_signature(target_subs, event)
+            ):
+                findings.append(
+                    Finding(
+                        id=unit.id,
+                        kind="style_mismatch",
+                        message=f"Style mismatch: source={unit.style!r}, target={event.style!r}.",
+                        current=event.plaintext,
+                    )
+                )
 
-    # Events in the translated file that have visible text but no corresponding source unit
-    # are unexpected (not drawings/comments — those have no plaintext).
-    for i, event in enumerate(events):
-        if i not in unit_indices and event.plaintext.strip():
-            findings.append(
-                Finding(
-                    id=f"T{i + 1:04d}",
-                    kind="extra_event",
-                    message="Translated file contains a text event with no source line at this index.",
-                    current=event.plaintext,
+        # Only Dialogue events with visible text and no source unit are unexpected;
+        # Comment events in ASS are preserved verbatim and are not translation targets.
+        for i, event in enumerate(events):
+            if i not in unit_indices and not event.is_comment and event.plaintext.strip():
+                findings.append(
+                    Finding(
+                        id=f"T{i + 1:04d}",
+                        kind="extra_event",
+                        message="Translated file has a text event with no matching source line.",
+                        current=event.plaintext,
+                    )
                 )
-            )
 
     duplicate_ids = sorted(
         unit_id for unit_id, count in Counter(unit.id for unit in units).items() if count > 1

@@ -6,6 +6,32 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+- `review` now pairs source and target lines by `unit.event_index` instead of sequential
+  position, so non-translatable ASS events (drawings, comments) preserved verbatim in the
+  output no longer shift the pairing. For SRT targets (where `prune_to_units` and
+  `flatten_overlaps` have removed those events) the pairing falls back to sequential
+  position. Comment events with visible text are no longer falsely reported as `extra_event`.
+- `review --apply` guards against stale fixes: a safe replacement is skipped when the
+  translated line has been edited since the review was generated, preventing a fix derived
+  from stale context from corrupting a hand-edited line.
+- `translate` now falls back to a wrong-language sidecar when the embedded track probe
+  raises `MediaToolError` (e.g. an empty/corrupt container), not only when it raises
+  `SourceError`. The sidecar priority chain — exact-match sidecar → embedded track →
+  wrong-language sidecar — is now enforced correctly in all cases.
+- ASS output no longer deletes drawings, comment events, and other non-translatable events.
+  `prune_to_units` is now called only for SRT output; ASS output preserves all source
+  events verbatim and `validate_output` compares by `event_index` rather than total count.
+- Alias detection in `compact-memory` no longer raises `AttributeError` when the LLM
+  returns a malformed `duplicates` list (non-dict items, truncated JSON). The entire parse
+  and loop is now inside a single `try/except` that surfaces all failures as a retryable
+  `ProviderError`.
+- Source language matching now recognises ISO 639-2/B codes reported by ffprobe (`rus`,
+  `ara`, `pol`, `ces`, `hun`, `ukr`, `tur`, and ~45 more), mapping them to their ISO 639-1
+  equivalents so track selection and sidecar matching work correctly for those languages.
+- Release workflow now runs the full test/lint/type-check suite and verifies that the pushed
+  tag matches `pyproject.toml` version before building artifacts.
+
 ## [0.2.3] - 2026-06-24
 
 ### Fixed

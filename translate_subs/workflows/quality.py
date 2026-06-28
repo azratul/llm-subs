@@ -84,15 +84,14 @@ def review_translation(
         raise PipelineError(f"Translated file not found: {translated_path}")
     target_subs = document.load(translated_path)
 
-    compare_styles = source.subtitle_path.suffix.lower() in (
-        ".ass",
-        ".ssa",
-    ) and translated_path.suffix.lower() in (".ass", ".ssa")
+    target_is_ass = translated_path.suffix.lower() in (".ass", ".ssa")
+    compare_styles = source.subtitle_path.suffix.lower() in (".ass", ".ssa") and target_is_ass
     lines, structural = pair_lines(
         units,
         target_subs,
         source_subs=source_subs,
         compare_styles=compare_styles,
+        sequential=not target_is_ass,
     )
 
     project_name, episode_name = project_episode(source, project)

@@ -24,6 +24,33 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
 
+      - name: Install ffmpeg (system dependency)
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
+      - name: Sync dependencies
+        run: uv sync --frozen
+
+      - name: Verify tag matches pyproject.toml version
+        run: |
+          PKG_VERSION=$(python -c "import tomllib; d = tomllib.load(open('pyproject.toml','rb')); print(d['project']['version'])")
+          EXPECTED_TAG="v${PKG_VERSION}"
+          if [ "${GITHUB_REF_NAME}" != "${EXPECTED_TAG}" ]; then
+            echo "Tag ${GITHUB_REF_NAME} does not match pyproject.toml version ${EXPECTED_TAG}"
+            exit 1
+          fi
+
+      - name: Lint (ruff)
+        run: uv run ruff check translate_subs/ tests/
+
+      - name: Format check (ruff)
+        run: uv run ruff format --check translate_subs/ tests/
+
+      - name: Type-check (mypy)
+        run: uv run mypy translate_subs/
+
+      - name: Tests
+        run: uv run pytest -q
+
       - name: Build wheel and sdist
         run: uv build
 
