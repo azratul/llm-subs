@@ -55,7 +55,7 @@ def doctor(
     """Check the environment: media tools, writable data/cache dirs, optional provider."""
     runtime = _runtime()
     checks = run_diagnostics(provider)
-    table = Table(title="translate-subs doctor")
+    table = Table(title="llm-subs doctor")
     for col in ("check", "status", "detail"):
         table.add_column(col)
     marks = {"ok": "[green]ok[/green]", "warn": "[yellow]warn[/yellow]", "fail": "[red]fail[/red]"}

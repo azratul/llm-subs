@@ -6,7 +6,33 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.6] - 2026-06-28
+
+### Fixed
+- `llm-subs --version` and the backwards-compatible `translate-subs --version` alias now report
+  the installed `llm-subs` distribution version instead of `0.0.0+source`.
+- CI and release smoke tests now install the built wheel and require both command aliases to
+  report the exact version declared in `pyproject.toml`; `uv lock --check` also prevents a stale
+  root-package version from reaching a release.
+- Runtime and documentation naming now consistently use `llm-subs`. New installations use the
+  `llm-subs` XDG data/cache directories and `$LLM_SUBS_HOME`, while the old
+  `translate-subs` directories, command alias and `$TRANSLATE_SUBS_HOME` remain supported for
+  backwards compatibility.
+- Restored the missing 0.2.4/0.2.5 changelog history and corrected comparison links after the
+  repository rename.
+
 ## [0.2.5] - 2026-06-28
+
+### Changed
+- Renamed the PyPI distribution and canonical command to `llm-subs`, retained `translate-subs`
+  as a backwards-compatible command alias, and updated repository/install documentation.
+- Bumped the distribution from 0.2.4 to 0.2.5 because PyPI package filenames are immutable.
+
+## [0.2.4] - 2026-06-28
+
+### Added
+- Tagged releases now publish the built wheel and source distribution to PyPI in addition to
+  attaching them to the GitHub Release.
 
 ### Fixed
 - `review` now pairs source and target lines by `unit.event_index` instead of sequential
@@ -353,9 +379,12 @@ First tagged release.
   (`extra="forbid"`) and validate on assignment; unexpected LLM gender values fold to `unknown`
   instead of entering memory.
 
-[Unreleased]: https://github.com/azratul/translate-subs/compare/v0.2.3...HEAD
-[0.2.3]: https://github.com/azratul/translate-subs/compare/v0.2.2...v0.2.3
-[0.2.2]: https://github.com/azratul/translate-subs/compare/v0.2.1...v0.2.2
-[0.2.1]: https://github.com/azratul/translate-subs/compare/v0.2.0...v0.2.1
-[0.2.0]: https://github.com/azratul/translate-subs/compare/v0.1.0...v0.2.0
-[0.1.0]: https://github.com/azratul/translate-subs/releases/tag/v0.1.0
+[Unreleased]: https://github.com/azratul/llm-subs/compare/v0.2.6...HEAD
+[0.2.6]: https://github.com/azratul/llm-subs/compare/v0.2.5...v0.2.6
+[0.2.5]: https://github.com/azratul/llm-subs/compare/v0.2.4...v0.2.5
+[0.2.4]: https://github.com/azratul/llm-subs/compare/v0.2.3...v0.2.4
+[0.2.3]: https://github.com/azratul/llm-subs/compare/v0.2.2...v0.2.3
+[0.2.2]: https://github.com/azratul/llm-subs/compare/v0.2.1...v0.2.2
+[0.2.1]: https://github.com/azratul/llm-subs/compare/v0.2.0...v0.2.1
+[0.2.0]: https://github.com/azratul/llm-subs/compare/v0.1.0...v0.2.0
+[0.1.0]: https://github.com/azratul/llm-subs/releases/tag/v0.1.0

@@ -35,6 +35,9 @@ jobs:
         with:
           enable-cache: true
 
+      - name: Verify lockfile is current
+        run: uv lock --check
+
       - name: Install ffmpeg (system dependency)
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y ffmpeg
@@ -60,6 +63,8 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - name: Install uv
         uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+      - name: Verify lockfile is current
+        run: uv lock --check
       - name: Sync dependencies
         run: uv sync --frozen
       - name: Audit dependencies for known vulnerabilities
@@ -71,6 +76,8 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - name: Install uv
         uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+      - name: Verify lockfile is current
+        run: uv lock --check
       - name: Build wheel and sdist
         run: uv build
       - name: Check package metadata
@@ -79,5 +86,13 @@ jobs:
         run: |
           python -m venv /tmp/smoke
           /tmp/smoke/bin/pip install dist/*.whl
-          /tmp/smoke/bin/translate-subs --version
-          /tmp/smoke/bin/translate-subs --help
+          /tmp/smoke/bin/pip check
+          PKG_VERSION=$(python -c "import tomllib; d = tomllib.load(open('pyproject.toml','rb')); print(d['project']['version'])")
+          for COMMAND in llm-subs translate-subs; do
+            ACTUAL_VERSION=$(/tmp/smoke/bin/${COMMAND} --version)
+            if [ "${ACTUAL_VERSION}" != "${PKG_VERSION}" ]; then
+              echo "${COMMAND} reported ${ACTUAL_VERSION}; expected ${PKG_VERSION}"
+              exit 1
+            fi
+            /tmp/smoke/bin/${COMMAND} --help >/dev/null
+          done

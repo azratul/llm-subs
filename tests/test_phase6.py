@@ -79,7 +79,7 @@ def test_cli_adapters_run_from_throwaway_cwd(capture_run):
     for runner in (CodexCli(), AntigravityCli(), OpencodeCli()):
         runner("PROMPT")
         cwd = capture_run["cwd"]
-        assert cwd is not None and Path(cwd).name.startswith("translate-subs-cwd-")
+        assert cwd is not None and Path(cwd).name.startswith("llm-subs-cwd-")
 
 
 def test_make_runner_and_unknown():

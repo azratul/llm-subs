@@ -135,7 +135,7 @@ def _resolve_policy(on_conflict: str | None, non_interactive: bool) -> ConflictP
 def _version_callback(value: bool) -> None:
     if value:
         try:
-            console.print(_pkg_version("translate-subs"))
+            console.print(_pkg_version("llm-subs"))
         except PackageNotFoundError:
             console.print("0.0.0+source")
         raise typer.Exit()

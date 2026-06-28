@@ -1,6 +1,6 @@
 [project]
 name = "llm-subs"
-version = "0.2.5"
+version = "0.2.6"
 description = "Contextual subtitle translator (any language to any language) that preserves timing and ASS structure, driven by LLM agent CLIs."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -36,8 +36,8 @@ Repository = "https://github.com/azratul/llm-subs"
 Issues = "https://github.com/azratul/llm-subs/issues"
 
 [project.scripts]
-translate-subs = "translate_subs.cli:app"
 llm-subs = "translate_subs.cli:app"
+translate-subs = "translate_subs.cli:app" # backwards-compatible command alias
 
 [dependency-groups]
 dev = ["pytest>=8.0", "pytest-cov>=5.0", "ruff>=0.6", "mypy>=1.10"]

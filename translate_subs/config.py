@@ -2,7 +2,9 @@
 
 Paths default to the user's standard data/cache locations so the tool works from any
 directory once installed (not just from a checkout). Override the whole data root with
-``$TRANSLATE_SUBS_HOME``; otherwise the XDG base-directory variables are honoured.
+``$LLM_SUBS_HOME``; the legacy ``$TRANSLATE_SUBS_HOME`` name remains supported.
+Otherwise the XDG base-directory variables are honoured. Existing ``translate-subs``
+data/cache directories are reused when the canonical ``llm-subs`` directory is absent.
 """
 
 from __future__ import annotations
@@ -10,18 +12,31 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+APP_DIR_NAME = "llm-subs"
+LEGACY_APP_DIR_NAME = "translate-subs"
+
+
+def _existing_or_canonical_root(base: str) -> Path:
+    """Use the canonical app directory, with a non-destructive legacy fallback."""
+    root = Path(base).expanduser()
+    canonical = root / APP_DIR_NAME
+    legacy = root / LEGACY_APP_DIR_NAME
+    if not canonical.exists() and legacy.exists():
+        return legacy
+    return canonical
+
 
 def _data_root() -> Path:
-    override = os.environ.get("TRANSLATE_SUBS_HOME")
+    override = os.environ.get("LLM_SUBS_HOME") or os.environ.get("TRANSLATE_SUBS_HOME")
     if override:
         return Path(override).expanduser()
     base = os.environ.get("XDG_DATA_HOME") or "~/.local/share"
-    return Path(base).expanduser() / "translate-subs"
+    return _existing_or_canonical_root(base)
 
 
 def _cache_root() -> Path:
     base = os.environ.get("XDG_CACHE_HOME") or "~/.cache"
-    return Path(base).expanduser() / "translate-subs"
+    return _existing_or_canonical_root(base)
 
 
 DATA_DIR = _data_root()

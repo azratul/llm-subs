@@ -93,7 +93,7 @@ class ClaudeCli:
         # Run from an empty throwaway directory: on top of the denied-tools sandbox, this keeps a
         # crafted subtitle from steering the agent toward files in the user's real cwd.
         try:
-            with tempfile.TemporaryDirectory(prefix="translate-subs-cwd-") as cwd:
+            with tempfile.TemporaryDirectory(prefix="llm-subs-cwd-") as cwd:
                 proc = subprocess.run(
                     cmd,
                     input=prompt,

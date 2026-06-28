@@ -29,7 +29,7 @@ def _run(binary_name: str, cmd: list[str], prompt: str | None, timeout: int) -> 
     # Run from an empty throwaway directory: on top of each CLI's read-only sandbox, this keeps a
     # crafted subtitle from nudging the agent toward whatever files sit in the user's real cwd.
     try:
-        with tempfile.TemporaryDirectory(prefix="translate-subs-cwd-") as cwd:
+        with tempfile.TemporaryDirectory(prefix="llm-subs-cwd-") as cwd:
             proc = subprocess.run(
                 cmd, input=prompt, capture_output=True, text=True, timeout=timeout, cwd=cwd
             )

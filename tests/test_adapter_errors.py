@@ -72,7 +72,7 @@ def test_claude_cli_hardens_argv(monkeypatch):
         assert tool in denied
     # Hardening: runs from an empty throwaway directory, not the user's real cwd.
     cwd = captured["cwd"]
-    assert cwd is not None and Path(cwd).name.startswith("translate-subs-cwd-")
+    assert cwd is not None and Path(cwd).name.startswith("llm-subs-cwd-")
 
 
 def test_claude_cli_raises_when_binary_missing(monkeypatch):

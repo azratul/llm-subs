@@ -8,7 +8,7 @@ You can expect an initial response within a few days.
 
 ## Threat model
 
-`translate-subs` is a local command-line tool that you run on your own machine, on media you
+`llm-subs` is a local command-line tool that you run on your own machine, on media you
 choose. Keep two things in mind.
 
 ### 1. Subtitle content is untrusted input sent to a translation backend

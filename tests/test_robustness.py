@@ -7,6 +7,7 @@ import pysubs2
 import pytest
 from typer.testing import CliRunner
 
+from translate_subs import cli as cli_module
 from translate_subs import config, pipeline
 from translate_subs.cli import app
 from translate_subs.io import media_probe
@@ -111,10 +112,47 @@ def test_ensure_binary_passes_when_present(monkeypatch):
 # --- CLI: --version and --force ------------------------------------------------------
 
 
-def test_cli_version_flag():
+def test_cli_version_flag_uses_distribution_name(monkeypatch):
+    requested = []
+    monkeypatch.setattr(
+        cli_module,
+        "_pkg_version",
+        lambda distribution: requested.append(distribution) or "9.8.7",
+    )
+
     result = CliRunner().invoke(app, ["--version"])
     assert result.exit_code == 0
-    assert result.stdout.strip()  # prints a version string
+    assert result.stdout.strip() == "9.8.7"
+    assert requested == ["llm-subs"]
+
+
+def test_config_prefers_canonical_home_variable(monkeypatch, tmp_path):
+    canonical = tmp_path / "canonical"
+    legacy = tmp_path / "legacy"
+    monkeypatch.setenv("LLM_SUBS_HOME", str(canonical))
+    monkeypatch.setenv("TRANSLATE_SUBS_HOME", str(legacy))
+
+    assert config._data_root() == canonical
+
+    monkeypatch.delenv("LLM_SUBS_HOME")
+    assert config._data_root() == legacy
+
+
+def test_config_reuses_legacy_xdg_directory(monkeypatch, tmp_path):
+    monkeypatch.delenv("LLM_SUBS_HOME", raising=False)
+    monkeypatch.delenv("TRANSLATE_SUBS_HOME", raising=False)
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
+    legacy = tmp_path / "translate-subs"
+
+    assert config._data_root() == tmp_path / "llm-subs"
+
+    legacy.mkdir()
+
+    assert config._data_root() == legacy
+
+    canonical = tmp_path / "llm-subs"
+    canonical.mkdir()
+    assert config._data_root() == canonical
 
 
 def test_translate_force_required_to_overwrite(tmp_path, monkeypatch):

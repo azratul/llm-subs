@@ -57,14 +57,17 @@ llm-subs --help
 ```
 
 `ffmpeg`/`ffprobe` are **system** dependencies (not installed by pip); install them with your
-package manager. For `--provider litellm`, add the extra: `uv tool install ".[litellm]"`.
+package manager. For `--provider litellm`, install the extra with
+`uv tool install "llm-subs[litellm]"` (or `uv tool install ".[litellm]"` from a clone).
 
 Per-series memory and other state are stored under the standard user data directory
 (`$XDG_DATA_HOME/llm-subs`, i.e. `~/.local/share/llm-subs` on Linux), and extracted
-tracks under `$XDG_CACHE_HOME/llm-subs`. Override the whole data root with
-`$TRANSLATE_SUBS_HOME` (e.g. to keep a project's memory next to a checkout:
-`export TRANSLATE_SUBS_HOME=/path/to/repo/data`). Translated subtitles are written **next to the
-input file** by default (`--out-dir`/`--output` to change that), not under the data dir.
+tracks under `$XDG_CACHE_HOME/llm-subs`. Override the whole data root with `$LLM_SUBS_HOME`
+(e.g. `export LLM_SUBS_HOME=/path/to/data`). The former `$TRANSLATE_SUBS_HOME` variable and
+existing `translate-subs` XDG directories remain supported for backwards compatibility; when
+both old and new directories exist, `llm-subs` takes precedence. Translated subtitles are written
+**next to the input file** by default (`--out-dir`/`--output` to change that), not under the data
+dir.
 
 ### From a tagged release
 

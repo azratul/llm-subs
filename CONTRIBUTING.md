@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for your interest in improving `translate-subs`. This is a focused command-line tool;
+Thanks for your interest in improving `llm-subs`. This is a focused command-line tool;
 see the **Scope, non-goals and limitations** section of the [README](README.md) before
 proposing large features, so effort isn't spent on things that are intentionally out of scope.
 
@@ -10,7 +10,7 @@ Requires Python ≥ 3.11, [`uv`](https://docs.astral.sh/uv/), and `ffmpeg`/`ffpr
 
 ```bash
 uv sync                 # install deps (incl. dev tools) into the project venv
-uv run translate-subs --help
+uv run llm-subs --help
 ```
 
 ## Before opening a pull request
