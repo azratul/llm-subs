@@ -44,12 +44,14 @@ episodes.
 Install it once and run `translate-subs` from any directory (it does not need a checkout):
 
 ```bash
+# From PyPI:
+uv tool install llm-subs   # or: pipx install llm-subs
+
 # From a clone:
-uv tool install .          # or: pipx install .
+uv tool install .
 
 # Directly from GitHub (no clone):
 uv tool install "git+https://github.com/azratul/translate-subs"
-# or: pipx install "git+https://github.com/azratul/translate-subs"
 
 translate-subs --help
 ```
