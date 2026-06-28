@@ -31,9 +31,9 @@ dependencies = [
 litellm = ["litellm>=1.40"]
 
 [project.urls]
-Homepage = "https://github.com/azratul/translate-subs"
-Repository = "https://github.com/azratul/translate-subs"
-Issues = "https://github.com/azratul/translate-subs/issues"
+Homepage = "https://github.com/azratul/llm-subs"
+Repository = "https://github.com/azratul/llm-subs"
+Issues = "https://github.com/azratul/llm-subs/issues"
 
 [project.scripts]
 translate-subs = "translate_subs.cli:app"

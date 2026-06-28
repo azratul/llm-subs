@@ -1,7 +1,7 @@
-# translate-subs
+# llm-subs
 
-[![CI](https://github.com/azratul/translate-subs/actions/workflows/ci.yml/badge.svg)](https://github.com/azratul/translate-subs/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/azratul/translate-subs?sort=semver)](https://github.com/azratul/translate-subs/releases)
+[![CI](https://github.com/azratul/llm-subs/actions/workflows/ci.yml/badge.svg)](https://github.com/azratul/llm-subs/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/azratul/llm-subs?sort=semver)](https://github.com/azratul/llm-subs/releases)
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/)
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue)](LICENSE)
 
@@ -41,7 +41,7 @@ episodes.
 
 ### As a global command (recommended for use)
 
-Install it once and run `translate-subs` from any directory (it does not need a checkout):
+Install it once and run `llm-subs` from any directory (it does not need a checkout):
 
 ```bash
 # From PyPI:
@@ -51,17 +51,17 @@ uv tool install llm-subs   # or: pipx install llm-subs
 uv tool install .
 
 # Directly from GitHub (no clone):
-uv tool install "git+https://github.com/azratul/translate-subs"
+uv tool install "git+https://github.com/azratul/llm-subs"
 
-translate-subs --help
+llm-subs --help
 ```
 
 `ffmpeg`/`ffprobe` are **system** dependencies (not installed by pip); install them with your
 package manager. For `--provider litellm`, add the extra: `uv tool install ".[litellm]"`.
 
 Per-series memory and other state are stored under the standard user data directory
-(`$XDG_DATA_HOME/translate-subs`, i.e. `~/.local/share/translate-subs` on Linux), and extracted
-tracks under `$XDG_CACHE_HOME/translate-subs`. Override the whole data root with
+(`$XDG_DATA_HOME/llm-subs`, i.e. `~/.local/share/llm-subs` on Linux), and extracted
+tracks under `$XDG_CACHE_HOME/llm-subs`. Override the whole data root with
 `$TRANSLATE_SUBS_HOME` (e.g. to keep a project's memory next to a checkout:
 `export TRANSLATE_SUBS_HOME=/path/to/repo/data`). Translated subtitles are written **next to the
 input file** by default (`--out-dir`/`--output` to change that), not under the data dir.
@@ -73,20 +73,20 @@ clone (replace `vX.Y.Z` with the release tag):
 
 ```bash
 # Pin a release tag straight from the repository:
-uv tool install "git+https://github.com/azratul/translate-subs@vX.Y.Z"
+uv tool install "git+https://github.com/azratul/llm-subs@vX.Y.Z"
 # or from the attached wheel:
-pipx install "https://github.com/azratul/translate-subs/releases/download/vX.Y.Z/translate_subs-X.Y.Z-py3-none-any.whl"
+pipx install "https://github.com/azratul/llm-subs/releases/download/vX.Y.Z/llm_subs-X.Y.Z-py3-none-any.whl"
 ```
 
 ### For development (from a checkout)
 
 ```bash
 uv sync                       # install deps into the project venv
-uv run translate-subs --help  # run via uv without a global install
+uv run llm-subs --help  # run via uv without a global install
 ```
 
 If the entry point fails with `No module named 'translate_subs'`, the editable install is stale:
-`uv sync --reinstall-package translate-subs`.
+`uv sync --reinstall-package llm-subs`.
 
 ### Build distributable artifacts
 
@@ -111,8 +111,8 @@ untrusted subtitles through an agent CLI that has tool access.
 
 ## Quick start
 
-If you installed the tool globally, use `translate-subs`. If you are running from a checkout, use
-`uv run translate-subs` in the examples below.
+If you installed the tool globally, use `llm-subs`. If you are running from a checkout, use
+`uv run llm-subs` in the examples below.
 
 ### 1. Check your setup
 
@@ -120,8 +120,8 @@ Run `doctor` first. It tells you whether Python, `ffmpeg`/`ffprobe`, the data di
 optionally your translation backend are ready.
 
 ```bash
-translate-subs doctor
-translate-subs doctor --provider ollama      # or claude / codex / litellm / ...
+llm-subs doctor
+llm-subs doctor --provider ollama      # or claude / codex / litellm / ...
 ```
 
 ### 2. Pick a backend
@@ -140,7 +140,7 @@ For personal use there are two common paths:
 For a sidecar subtitle file:
 
 ```bash
-translate-subs translate "/media/Movies/Movie.en.srt" \
+llm-subs translate "/media/Movies/Movie.en.srt" \
   --provider ollama --model qwen3:4b \
   --lang en --target es-latam \
   --non-interactive
@@ -149,13 +149,13 @@ translate-subs translate "/media/Movies/Movie.en.srt" \
 For a video file with embedded subtitles, first list the tracks if you are unsure which one to use:
 
 ```bash
-translate-subs probe "/media/TV Shows/Show/Season 1/Episode 01.mkv"
+llm-subs probe "/media/TV Shows/Show/Season 1/Episode 01.mkv"
 ```
 
 Then translate it:
 
 ```bash
-translate-subs translate "/media/TV Shows/Show/Season 1/Episode 01.mkv" \
+llm-subs translate "/media/TV Shows/Show/Season 1/Episode 01.mkv" \
   --provider ollama --model qwen3:4b \
   --lang en --target es-latam \
   --non-interactive
@@ -178,14 +178,14 @@ relationships, recurring terms and tone.
 
 ```bash
 # 1) Analyze the episode and create/update the series memory
-translate-subs analyze "/media/TV Shows/Show/Season 1/Episode 01.mkv" \
+llm-subs analyze "/media/TV Shows/Show/Season 1/Episode 01.mkv" \
   --provider claude \
   --lang en --target es-latam \
   --project "Show" \
   --non-interactive
 
 # 2) Translate using the episode context and accumulated memory
-translate-subs translate "/media/TV Shows/Show/Season 1/Episode 01.mkv" \
+llm-subs translate "/media/TV Shows/Show/Season 1/Episode 01.mkv" \
   --provider ollama --model qwen3:4b \
   --lang en --target es-latam \
   --project "Show" \
@@ -206,15 +206,15 @@ files without the fingerprint are left alone.
 
 ```bash
 # Review and apply only safe fixes (confirmed gender, glossary, names…)
-translate-subs review "$EP" "$OUT" --provider claude \
+llm-subs review "$EP" "$OUT" --provider claude \
   --project "Your project" --apply --non-interactive
 
 # Readability control: compact lines that exceed the on-screen limits
-translate-subs tighten "$OUT" --provider claude \
+llm-subs tighten "$OUT" --provider claude \
   --project "Your project" --apply
 
 # Validate the final file
-translate-subs validate "$OUT"
+llm-subs validate "$OUT"
 ```
 
 `analyze`, `translate`, `review`, and `tighten` let you pick the CLI with `--provider`/`--model`;
@@ -229,10 +229,10 @@ immediately (`--retries 0` disables retries).
 
 ```bash
 # Japanese -> English   => ep.en.ass
-translate-subs translate ep.mkv --provider ollama --model qwen3:4b --lang ja --target en
+llm-subs translate ep.mkv --provider ollama --model qwen3:4b --lang ja --target en
 
 # English -> French     => ep.fr.ass
-translate-subs translate ep.en.srt --provider ollama --model qwen3:4b --lang en --target fr-FR
+llm-subs translate ep.en.srt --provider ollama --model qwen3:4b --lang en --target fr-FR
 ```
 
 ## Output format (`.ass` vs `.srt`)
@@ -258,7 +258,7 @@ positioning anyway, so only basic italic/bold survive.
 
 ```bash
 # .srt output (instead of the default .ass)
-translate-subs translate "$EP" --provider ollama --model qwen3:4b \
+llm-subs translate "$EP" --provider ollama --model qwen3:4b \
   --lang en --target es-latam --format srt --non-interactive
 ```
 
@@ -334,8 +334,8 @@ or CI log it stays quiet. Only the CLI/API providers are checkpointed — `ident
 `batch` runs `translate` over every matching file in a directory, sharing one `--project`:
 
 ```bash
-translate-subs batch "TV Shows/Show/Season 1" --project "Show" --target es-latam --provider claude
-translate-subs batch . --glob '*.mkv' --glob '*.mp4' -r          # several patterns, recurse
+llm-subs batch "TV Shows/Show/Season 1" --project "Show" --target es-latam --provider claude
+llm-subs batch . --glob '*.mkv' --glob '*.mp4' -r          # several patterns, recurse
 ```
 
 It selects files with `--glob` (default `*.mkv`, repeatable; `-r`/`--recursive` descends into
@@ -353,7 +353,7 @@ the shared project memory (characters, genders, glossary, style guide) before an
 begins:
 
 ```bash
-translate-subs batch "TV Shows/Show/Season 1" --project "Show" --target es-latam \
+llm-subs batch "TV Shows/Show/Season 1" --project "Show" --target es-latam \
   --provider claude --pre-analyze
 ```
 
@@ -385,9 +385,9 @@ Instead of repeating `--provider`, `--model`, `--target`, etc. for every episode
 them once with `config`:
 
 ```bash
-translate-subs config "Show" --provider ollama --model qwen3:4b --target es-latam
-translate-subs config "Show"                       # show current defaults
-translate-subs config "Show" --unset model         # clear a field back to the built-in default
+llm-subs config "Show" --provider ollama --model qwen3:4b --target es-latam
+llm-subs config "Show"                       # show current defaults
+llm-subs config "Show" --unset model         # clear a field back to the built-in default
 ```
 
 These are stored in `<project>/settings.json` (next to the memory files; hand-editable too) and
@@ -412,14 +412,14 @@ command:
 
 ```bash
 # Single episode: analyze first, then translate
-translate-subs analyze episode.mkv \
+llm-subs analyze episode.mkv \
   --provider claude --project "Series" --non-interactive
 
-translate-subs translate episode.mkv \
+llm-subs translate episode.mkv \
   --provider ollama --model qwen3:4b --project "Series" --non-interactive
 
 # Whole season: analyze all episodes first, then translate all (recommended)
-translate-subs batch "Season 1/" --project "Series" \
+llm-subs batch "Season 1/" --project "Series" \
   --provider ollama --model qwen3:4b --pre-analyze --non-interactive
 ```
 
@@ -463,7 +463,7 @@ terms and duplicate or info-less characters from `data/projects/<series>/`. Run 
 memory has accumulated noise:
 
 ```bash
-translate-subs compact-memory "Your Project"
+llm-subs compact-memory "Your Project"
 ```
 
 Contradicting suggestions are recorded in `conflicts.json` rather than silently overwriting a
@@ -474,7 +474,7 @@ confirmed gender; relationship descriptions are free text and never flagged. To 
 use the suggested one, or skip it (leaving it in the log):
 
 ```bash
-translate-subs resolve-conflicts "Your Project"
+llm-subs resolve-conflicts "Your Project"
 ```
 
 You also don't need to `analyze` every episode: the cast and glossary stabilize after the first
@@ -511,7 +511,7 @@ on the facades so integrations do not depend on the internal module layout.
 
 ## Scope, non-goals and limitations
 
-`translate-subs` is a focused, single-user command-line tool. The items below are **deliberate
+`llm-subs` is a focused, single-user command-line tool. The items below are **deliberate
 decisions**, documented here so they are not repeatedly filed as defects. They are choices about
 scope, not oversights.
 
