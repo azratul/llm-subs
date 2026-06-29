@@ -151,11 +151,21 @@ _RUNNERS: dict[str, Callable[[str | None, str | None], Runner]] = {
 CLI_PROVIDERS = tuple(_RUNNERS)
 
 
-def make_runner(provider: str, model: str | None = None, reasoning: str | None = None) -> Runner:
+def make_runner(
+    provider: str,
+    model: str | None = None,
+    reasoning: str | None = None,
+    *,
+    timeout: int | None = None,
+) -> Runner:
     try:
-        return _RUNNERS[provider](model, reasoning)
+        runner = _RUNNERS[provider](model, reasoning)
     except KeyError:
         raise ProviderError(
             f"No CLI runner for provider '{provider}'.",
             retryable=False,
         ) from None
+    if timeout is not None:
+        # Every runner is a dataclass exposing a `timeout` field; the Runner alias hides it.
+        runner.timeout = timeout  # type: ignore[attr-defined]
+    return runner

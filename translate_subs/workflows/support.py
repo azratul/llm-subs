@@ -33,23 +33,31 @@ def make_provider(
     model: str | None = None,
     reasoning: str | None = None,
     max_retries: int = 2,
+    timeout: int | None = None,
 ) -> TranslationProvider:
     if name == "identity":
         return IdentityProvider()
     if name == "file-handoff":
         return FileHandoffProvider(jobs_dir)
     if name in CLI_PROVIDERS:
-        return CliTranslationProvider(make_runner(name, model, reasoning), max_retries=max_retries)
+        runner = make_runner(name, model, reasoning, timeout=timeout)
+        return CliTranslationProvider(runner, max_retries=max_retries)
     raise PipelineError(f"Unknown provider: {name}")
 
 
-def make_ai_runner(provider: str, *, model: str | None = None, reasoning: str | None = None):
+def make_ai_runner(
+    provider: str,
+    *,
+    model: str | None = None,
+    reasoning: str | None = None,
+    timeout: int | None = None,
+):
     if provider not in CLI_PROVIDERS:
         supported = ", ".join(CLI_PROVIDERS)
         raise PipelineError(
             f"Provider '{provider}' cannot perform this operation. Use one of: {supported}."
         )
-    return make_runner(provider, model, reasoning)
+    return make_runner(provider, model, reasoning, timeout=timeout)
 
 
 # A subtitle usually lives in a season subfolder (`<Series>/Season 1/ep.mkv`), so the immediate

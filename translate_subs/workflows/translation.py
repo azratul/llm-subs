@@ -85,6 +85,8 @@ def translate_subtitle(
     force: bool = False,
     strict_lang: bool = False,
     resume: bool = True,
+    parallel: int | None = None,
+    timeout: int | None = None,
     on_progress: Callable[[BlockProgress], None] | None = None,
     resolve_source_fn,
     provider_factory: ProviderFactory,
@@ -166,6 +168,7 @@ def translate_subtitle(
         model=model,
         reasoning=reasoning,
         max_retries=max_retries,
+        timeout=timeout,
     )
     if provider in CLI_PROVIDERS:
         # Key the checkpoint on the model the runner will actually use, not the (possibly unset)
@@ -180,7 +183,8 @@ def translate_subtitle(
             if resume
             else BlockCheckpoint(path=checkpoint_file, signature=signature)
         )
-        parallel = _DEFAULT_API_PARALLEL if provider in _API_PROVIDERS else 1
+        if parallel is None:
+            parallel = _DEFAULT_API_PARALLEL if provider in _API_PROVIDERS else 1
         translations, untranslated_ids = translate_with_checkpoint(
             translation_provider,
             jobs,

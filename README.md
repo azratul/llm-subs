@@ -300,6 +300,10 @@ SDK).
 - `--reasoning <minimal|low|medium|high|xhigh>` tunes the reasoning effort of **codex**
   (default `low`: translating doesn't need `xhigh`, which is slower and costlier).
 - `--retries <n>` controls retries on agent failures, invalid JSON, or wrong IDs (default `2`).
+- `--parallel <n>` sets how many blocks translate concurrently (default `4` for the API providers
+  `ollama`/`litellm`, `1` for the agent CLIs). Lower it to avoid saturating a local Ollama server.
+- `--timeout <seconds>` bounds each provider call (default `600`). Raise it for slow local models
+  on long blocks, or lower it to fail fast. Both `--parallel` and `--timeout` also work on `batch`.
 
 ### Cross-cutting flags
 
@@ -592,6 +596,12 @@ specific items follow.
 
 ### Known limitations (accepted trade-offs)
 
+- **Image-based subtitle tracks (PGS/VobSub) are not supported.** Blu-ray and some anime releases
+  carry subtitles as bitmaps (`hdmv_pgs_subtitle`, `dvd_subtitle`) rather than text. The tool
+  works on text it can parse into translatable units, so a container whose only subtitle track is
+  image-based is rejected with a clear message — extracting that text would require an OCR step
+  (e.g. Tesseract via SubtitleEdit), which is out of scope. Use a text sidecar (`.srt`/`.ass`) or
+  OCR the track to text yourself first.
 - **`--strict-lang` is translation-only.** `analyze` and `review` can resolve a subtitle track
   from a video container, but they intentionally do not expose `--strict-lang`; adding the flag
   across those commands would expand the CLI for a rare personal-use case. When the container's

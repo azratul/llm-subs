@@ -914,6 +914,33 @@ def test_translate_no_resume_retranslates_all_blocks(tmp_path, monkeypatch):
     assert second.calls == ["0001", "0002"]
 
 
+def test_translate_parallel_flag_is_forwarded(tmp_path, monkeypatch):
+    import translate_subs.workflows.translation as wf
+
+    monkeypatch.setattr(config, "PROJECTS_DIR", tmp_path / "projects")
+    source = _multi_block_source(tmp_path)
+    monkeypatch.setattr(pipeline, "make_provider", lambda *a, **k: _FlakyProvider())
+
+    captured: dict = {}
+    real = wf.translate_with_checkpoint
+
+    def spy(*args, **kwargs):
+        captured["parallel"] = kwargs.get("parallel")
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(wf, "translate_with_checkpoint", spy)
+
+    # No flag: a non-API CLI provider defaults to 1.
+    pipeline.translate_subtitle(source, provider="claude", interactive=False, project="P")
+    assert captured["parallel"] == 1
+
+    # Explicit --parallel overrides the auto-derived default.
+    pipeline.translate_subtitle(
+        source, provider="claude", interactive=False, project="P", force=True, parallel=3
+    )
+    assert captured["parallel"] == 3
+
+
 # --- batch / directory translation ---------------------------------------------------
 
 

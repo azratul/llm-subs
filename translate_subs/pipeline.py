@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 from translate_subs import config
 from translate_subs.ai.checkpoint import BlockProgress
@@ -111,6 +112,10 @@ _prior_known = _prior_known_impl
 _merge_into_memory = _merge_into_memory_impl
 _apply_conflict_choice = _apply_conflict_choice_impl
 
+# An injectable text-completion backend: prompt in, completion out. Tests pass a fake; in normal
+# use it is built from `--provider`/`--model`.
+Runner = Callable[[str], str]
+
 
 def analyze_subtitle(
     input_path: str | Path,
@@ -127,7 +132,7 @@ def analyze_subtitle(
     reasoning: str | None = None,
     max_retries: int = 2,
     skip_if_current: bool = False,
-    runner=None,
+    runner: Runner | None = None,
 ) -> AnalyzeResult:
     """Analyze the full episode, save episode.context.json, and update series memory."""
     return _analyze_subtitle(
@@ -183,7 +188,7 @@ def compact_memory(
     model: str | None = None,
     reasoning: str | None = None,
     max_retries: int = 2,
-    alias_confirm=None,
+    alias_confirm: Callable[..., str] | None = None,
 ) -> CompactMemoryResult:
     """Prune redundant entries from a series' memory.
 
@@ -230,6 +235,8 @@ def translate_subtitle(
     force: bool = False,
     strict_lang: bool = False,
     resume: bool = True,
+    parallel: int | None = None,
+    timeout: int | None = None,
     on_progress: Callable[[BlockProgress], None] | None = None,
 ) -> TranslateResult:
     """Resolve the source, translate by blocks, and export `<base>.<lang>.<fmt>`.
@@ -258,6 +265,8 @@ def translate_subtitle(
         force=force,
         strict_lang=strict_lang,
         resume=resume,
+        parallel=parallel,
+        timeout=timeout,
         on_progress=on_progress,
         resolve_source_fn=resolve_source,
         provider_factory=make_provider,
@@ -292,7 +301,7 @@ def batch_analyze(
     globs: tuple[str, ...] = DEFAULT_BATCH_GLOBS,
     recursive: bool = False,
     on_episode: Callable[[int, int, Path], None] | None = None,
-    **analyze_kwargs,
+    **analyze_kwargs: Any,
 ) -> AnalyzeBatchResult:
     """Analyze every matching file in `directory` to build series memory.
 
@@ -318,7 +327,7 @@ def batch_translate(
     globs: tuple[str, ...] = DEFAULT_BATCH_GLOBS,
     recursive: bool = False,
     on_episode: Callable[[int, int, Path], None] | None = None,
-    **translate_kwargs,
+    **translate_kwargs: Any,
 ) -> BatchResult:
     """Translate every matching file in `directory`, continuing past per-episode failures.
 
@@ -356,7 +365,7 @@ def review_translation(
     model: str | None = None,
     reasoning: str | None = None,
     max_retries: int = 2,
-    runner=None,
+    runner: Runner | None = None,
 ) -> ReviewResult:
     """Review a translation, write episode.review.md, optionally apply safe fixes."""
     return _review_translation(
@@ -392,7 +401,7 @@ def tighten_subtitle(
     model: str | None = None,
     reasoning: str | None = None,
     max_retries: int = 2,
-    runner=None,
+    runner: Runner | None = None,
 ) -> TightenResult:
     """Measure readability of a translated subtitle, compact over-limit lines, report."""
     return _tighten_subtitle(

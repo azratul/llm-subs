@@ -6,6 +6,19 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- `translate` and `batch` accept `--parallel <n>` to set how many blocks translate concurrently
+  (default `4` for the `ollama`/`litellm` APIs, `1` for the agent CLIs); lower it to avoid
+  saturating a local Ollama server.
+- `translate` and `batch` accept `--timeout <seconds>` to bound each provider call (default
+  `600`).
+
+### Changed
+- `pipeline.py`, documented as the stable public API, now type-checks cleanly under
+  `mypy --strict` (the rest of the package stays under the project's standard mypy config).
+- Documented that image-based subtitle tracks (PGS/VobSub) are unsupported and require external
+  OCR, in the README's known-limitations section.
+
 ## [0.2.8] - 2026-06-29
 
 ### Fixed

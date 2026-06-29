@@ -89,6 +89,17 @@ def test_make_runner_and_unknown():
         make_runner("nope")
 
 
+def test_make_runner_applies_timeout_override():
+    # Default timeout when not overridden, custom timeout threaded through to the runner.
+    assert make_runner("codex").timeout == 600
+    assert make_runner("codex", timeout=30).timeout == 30
+    # Also flows through the provider factory's runner.
+    from translate_subs.workflows.support import make_provider as _mp
+
+    provider = _mp("claude", Path("/tmp"), timeout=45)
+    assert provider.runner.timeout == 45
+
+
 def test_make_provider_wires_cli_providers(tmp_path):
     assert isinstance(make_provider("identity", tmp_path), IdentityProvider)
     for name in ("claude", "codex", "antigravity", "opencode"):

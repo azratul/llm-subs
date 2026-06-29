@@ -118,6 +118,19 @@ def translate(
         "--no-resume",
         help="Ignore any saved block checkpoint and re-translate every block from scratch.",
     ),
+    parallel: int | None = typer.Option(
+        None,
+        "--parallel",
+        min=1,
+        help="Concurrent translation blocks (default 4 for ollama/litellm, 1 otherwise). "
+        "Lower it to avoid saturating a local Ollama server.",
+    ),
+    timeout: int | None = typer.Option(
+        None,
+        "--timeout",
+        min=1,
+        help="Per-block provider timeout in seconds (default 600).",
+    ),
     non_interactive: bool = typer.Option(
         False,
         "--non-interactive",
@@ -158,6 +171,8 @@ def translate(
             force=force,
             strict_lang=strict_lang,
             resume=not no_resume,
+            parallel=parallel,
+            timeout=timeout,
             on_progress=on_progress,
         )
 
@@ -282,6 +297,16 @@ def batch(
     no_resume: bool = typer.Option(
         False, "--no-resume", help="Ignore saved checkpoints and re-translate every block."
     ),
+    parallel: int | None = typer.Option(
+        None,
+        "--parallel",
+        min=1,
+        help="Concurrent translation blocks per episode (default 4 for ollama/litellm, 1 "
+        "otherwise). Lower it to avoid saturating a local Ollama server.",
+    ),
+    timeout: int | None = typer.Option(
+        None, "--timeout", min=1, help="Per-block provider timeout in seconds (default 600)."
+    ),
     non_interactive: bool = typer.Option(
         True,
         "--non-interactive/--interactive",
@@ -372,6 +397,8 @@ def batch(
             force=force,
             strict_lang=strict_lang,
             resume=not no_resume,
+            parallel=parallel,
+            timeout=timeout,
         )
     except runtime._EXPECTED_ERRORS as exc:
         runtime.console.print(f"[red]Error:[/red] {exc}")
