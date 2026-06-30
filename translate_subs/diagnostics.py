@@ -8,12 +8,15 @@ backend (a CLI on PATH, a reachable Ollama server, or the optional litellm packa
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import sys
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as _pkg_version
 from pathlib import Path
 from typing import Literal
 
@@ -75,19 +78,42 @@ def _path_checks() -> list[Check]:
     ]
 
 
-def _ollama_check() -> Check:
+def _ollama_check(model: str | None = None) -> Check:
     host = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
     base = host if host.startswith("http") else f"http://{host}"
     url = f"{base.rstrip('/')}/api/tags"
     try:
-        with urllib.request.urlopen(url, timeout=5):  # noqa: S310 - local server URL
-            return Check("ollama", "ok", f"server reachable at {base}")
+        with urllib.request.urlopen(url, timeout=5) as resp:  # noqa: S310 - local server URL
+            payload = json.loads(resp.read().decode("utf-8"))
     except urllib.error.URLError as exc:
         return Check(
             "ollama",
             "fail",
             f"no server at {base} ({exc}). Start it with `ollama serve` or set $OLLAMA_HOST.",
         )
+    except (ValueError, OSError) as exc:
+        return Check("ollama", "warn", f"server at {base} but /api/tags was unreadable ({exc}).")
+
+    # Be defensive: a 200 with an unexpected JSON shape (not an object, models missing/null, or
+    # non-object entries) must not crash doctor — it's the one command meant to never throw.
+    models = payload.get("models") if isinstance(payload, dict) else None
+    if not isinstance(models, list):
+        return Check("ollama", "warn", f"server at {base} returned an unexpected /api/tags shape.")
+    installed = [
+        m["name"] for m in models if isinstance(m, dict) and isinstance(m.get("name"), str)
+    ]
+    if model is None:
+        listed = ", ".join(sorted(installed)) or "none"
+        return Check("ollama", "ok", f"server reachable at {base}; models: {listed}")
+    # Ollama tags carry a tag suffix (`qwen3:4b`); accept an exact match or the bare name.
+    if model in installed or any(name.split(":", 1)[0] == model for name in installed):
+        return Check("ollama", "ok", f"model '{model}' available at {base}")
+    available = ", ".join(sorted(installed)) or "none"
+    return Check(
+        "ollama",
+        "fail",
+        f"model '{model}' not installed at {base} (have: {available}). Run `ollama pull {model}`.",
+    )
 
 
 def _litellm_check() -> Check:
@@ -102,7 +128,7 @@ def _litellm_check() -> Check:
     return Check("litellm", "ok", "package importable")
 
 
-def _provider_check(provider: str) -> Check:
+def _provider_check(provider: str, model: str | None = None) -> Check:
     if provider in ("identity", "file-handoff"):
         return Check(provider, "ok", "no external backend required")
     if provider in _CLI_BINARIES:
@@ -112,19 +138,27 @@ def _provider_check(provider: str) -> Check:
             return Check(provider, "ok", path)
         return Check(provider, "fail", f"`{binary}` CLI not found on PATH.")
     if provider == "ollama":
-        return _ollama_check()
+        return _ollama_check(model)
     if provider == "litellm":
         return _litellm_check()
     return Check(provider, "fail", f"unknown provider '{provider}'.")
 
 
-def run_diagnostics(provider: str | None = None) -> list[Check]:
-    """Collect all checks; when `provider` is given, also verify its backend."""
+def _version_check() -> Check:
+    try:
+        return Check("llm-subs", "ok", _pkg_version("llm-subs"))
+    except PackageNotFoundError:
+        return Check("llm-subs", "warn", "running from source (package not installed)")
+
+
+def run_diagnostics(provider: str | None = None, model: str | None = None) -> list[Check]:
+    """Collect all checks; when `provider` is given, also verify its backend (and model)."""
     checks: list[Check] = [
+        _version_check(),
         Check("python", "ok", sys.version.split()[0]),
         *_media_checks(),
         *_path_checks(),
     ]
     if provider is not None:
-        checks.append(_provider_check(provider))
+        checks.append(_provider_check(provider, model))
     return checks

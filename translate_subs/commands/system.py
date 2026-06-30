@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 
 import typer
 from rich.table import Table
 
+from translate_subs import config
 from translate_subs.diagnostics import run_diagnostics
 from translate_subs.io.media_probe import probe_subtitle_tracks
 
@@ -15,6 +17,20 @@ def _runtime():
     from translate_subs import cli
 
     return cli
+
+
+def _dir_size(path: Path) -> tuple[int, int]:
+    """Return (file_count, total_bytes) under `path`, ignoring unreadable entries."""
+    files = 0
+    total = 0
+    for entry in path.rglob("*"):
+        if entry.is_file():
+            files += 1
+            try:
+                total += entry.stat().st_size
+            except OSError:
+                pass
+    return files, total
 
 
 def probe(media: Path = typer.Argument(..., help="Video file to inspect.")):
@@ -51,10 +67,15 @@ def doctor(
         None,
         help="Also check this provider's backend (claude|codex|...|ollama|litellm).",
     ),
+    model: str | None = typer.Option(
+        None,
+        "--model",
+        help="With --provider ollama, also verify this model is installed on the server.",
+    ),
 ):
     """Check the environment: media tools, writable data/cache dirs, optional provider."""
     runtime = _runtime()
-    checks = run_diagnostics(provider)
+    checks = run_diagnostics(provider, model)
     table = Table(title="llm-subs doctor")
     for col in ("check", "status", "detail"):
         table.add_column(col)
@@ -64,6 +85,43 @@ def doctor(
     runtime.console.print(table)
     if any(check.status == "fail" for check in checks):
         raise typer.Exit(code=1)
+
+
+def purge_cache(
+    yes: bool = typer.Option(False, "--yes", "-y", help="Delete without the confirmation prompt."),
+):
+    """Delete cached subtitle tracks extracted from video containers.
+
+    The cache (`$XDG_CACHE_HOME/llm-subs/work`) only holds subtitle tracks demuxed from media so a
+    rerun skips re-extraction; it is always safe to clear. Per-series memory, episode context and
+    reports live in the separate data root and are **not** touched by this command.
+    """
+    runtime = _runtime()
+    work_dir = config.WORK_DIR
+    if not work_dir.exists():
+        runtime.console.print(f"Cache is already empty: [dim]{work_dir}[/dim]")
+        return
+
+    files, total = _dir_size(work_dir)
+    if files == 0:
+        runtime.console.print(f"Cache is already empty: [dim]{work_dir}[/dim]")
+        return
+
+    mib = total / (1024 * 1024)
+    if not yes:
+        confirmed = typer.confirm(
+            f"Delete {files} cached file(s) ({mib:.1f} MiB) under {work_dir}?"
+        )
+        if not confirmed:
+            runtime.console.print("Aborted.")
+            raise typer.Exit(code=1)
+
+    for entry in sorted(work_dir.iterdir(), reverse=True):
+        if entry.is_dir():
+            shutil.rmtree(entry, ignore_errors=True)
+        else:
+            entry.unlink(missing_ok=True)
+    runtime.console.print(f"Freed [green]{mib:.1f} MiB[/green] from {files} cached file(s).")
 
 
 def validate(

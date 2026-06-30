@@ -19,7 +19,7 @@ from translate_subs.commands.project import (
     update_memory_command,
 )
 from translate_subs.commands.quality import review, tighten
-from translate_subs.commands.system import doctor, probe, validate
+from translate_subs.commands.system import doctor, probe, purge_cache, validate
 from translate_subs.commands.translation import batch, translate
 from translate_subs.io.media_probe import MediaToolError
 from translate_subs.io.source_resolver import SourceError
@@ -173,6 +173,7 @@ app.command()(review)
 app.command()(tighten)
 app.command()(doctor)
 app.command()(validate)
+app.command(name="purge-cache")(purge_cache)
 
 
 if __name__ == "__main__":

@@ -673,6 +673,50 @@ def test_doctor_provider_check_passthrough_needs_no_backend():
     assert diagnostics._provider_check("file-handoff").status == "ok"
 
 
+def test_doctor_reports_cli_version(monkeypatch):
+    from translate_subs import diagnostics
+
+    monkeypatch.setattr(diagnostics, "_pkg_version", lambda name: "9.9.9")
+    by_name = {c.name: c for c in diagnostics.run_diagnostics()}
+    assert by_name["llm-subs"].status == "ok" and by_name["llm-subs"].detail == "9.9.9"
+
+
+def test_doctor_ollama_checks_model_presence(monkeypatch):
+    import io
+    import json
+
+    from translate_subs import diagnostics
+
+    payload = json.dumps({"models": [{"name": "qwen3:4b"}, {"name": "llama3:8b"}]}).encode()
+
+    def fake_urlopen(url, timeout=5):
+        return io.BytesIO(payload)
+
+    monkeypatch.setattr(diagnostics.urllib.request, "urlopen", fake_urlopen)
+
+    # Bare-name match against a tagged model.
+    assert diagnostics._ollama_check("qwen3").status == "ok"
+    assert diagnostics._ollama_check("qwen3:4b").status == "ok"
+    missing = diagnostics._ollama_check("mistral")
+    assert missing.status == "fail" and "not installed" in missing.detail
+    # No model requested: still ok, lists what's there.
+    assert diagnostics._ollama_check().status == "ok"
+
+
+@pytest.mark.parametrize("body", ["[]", '{"models": null}', '{"models": [null]}', '"oops"'])
+def test_doctor_ollama_tolerates_unexpected_json(monkeypatch, body):
+    # A 200 with a valid-but-unexpected JSON shape must not crash doctor; it warns instead.
+    import io
+
+    from translate_subs import diagnostics
+
+    monkeypatch.setattr(
+        diagnostics.urllib.request, "urlopen", lambda url, timeout=5: io.BytesIO(body.encode())
+    )
+    check = diagnostics._ollama_check("qwen3")
+    assert check.status in ("warn", "fail")  # never raises
+
+
 def _fake_translate_result(tmp_path, untranslated):
     from types import SimpleNamespace
 

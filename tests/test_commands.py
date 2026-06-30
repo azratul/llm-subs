@@ -46,12 +46,42 @@ def test_validate_command_accepts_valid_and_rejects_broken(tmp_path):
     assert missing.exit_code == 1
 
 
+def test_purge_cache_command(tmp_path, monkeypatch):
+    from translate_subs import config
+
+    work = tmp_path / "work"
+    (work / "Show").mkdir(parents=True)
+    (work / "Show" / "track.ass").write_text("x" * 2048, encoding="utf-8")
+    (work / "loose.srt").write_text("y", encoding="utf-8")
+    monkeypatch.setattr(config, "WORK_DIR", work)
+
+    result = runner.invoke(app, ["purge-cache", "--yes"])
+    assert result.exit_code == 0
+    assert "Freed" in result.stdout
+    # The cache directory itself remains; its contents are gone.
+    assert work.exists()
+    assert not list(work.iterdir())
+
+
+def test_purge_cache_command_empty(tmp_path, monkeypatch):
+    from translate_subs import config
+
+    monkeypatch.setattr(config, "WORK_DIR", tmp_path / "missing")
+    result = runner.invoke(app, ["purge-cache", "--yes"])
+    assert result.exit_code == 0
+    assert "already empty" in result.stdout
+
+
 def test_doctor_command_exit_codes(monkeypatch):
-    monkeypatch.setattr(system_cmd, "run_diagnostics", lambda provider=None: [Check("x", "ok", "")])
+    monkeypatch.setattr(
+        system_cmd, "run_diagnostics", lambda provider=None, model=None: [Check("x", "ok", "")]
+    )
     assert runner.invoke(app, ["doctor"]).exit_code == 0
 
     monkeypatch.setattr(
-        system_cmd, "run_diagnostics", lambda provider=None: [Check("x", "fail", "boom")]
+        system_cmd,
+        "run_diagnostics",
+        lambda provider=None, model=None: [Check("x", "fail", "boom")],
     )
     assert runner.invoke(app, ["doctor"]).exit_code == 1
 
