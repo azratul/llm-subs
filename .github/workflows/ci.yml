@@ -120,7 +120,7 @@ jobs:
           printf '1\n00:00:01,000 --> 00:00:03,000\nHello world.\n' > /tmp/pip-ep.en.srt
           /tmp/pipenv/bin/llm-subs translate /tmp/pip-ep.en.srt \
             --provider identity --target es-latam --out-dir /tmp/pip-out --non-interactive
-          test -f "/tmp/pip-out/ep.es-latam.ass" || { echo "expected output not produced"; exit 1; }
+          test -f "/tmp/pip-out/pip-ep.es-latam.ass" || { echo "expected output not produced"; exit 1; }
       - name: Install the litellm extra and import it
         run: |
           /tmp/pipenv/bin/pip install ".[litellm]"
