@@ -12,6 +12,11 @@ All notable changes to this project are documented here. The format follows
   keys (it validates the raw model reply), and legacy files without the field load as version 1.
 
 ### Fixed
+- Multiline cues are no longer ambiguous in the translation prompt. A cue with an internal line
+  break carries a real newline, which previously split the `[ID] Speaker: text` line into an
+  unlabeled second physical line the model couldn't attribute to an id. The break is now serialized
+  as the literal token `\n` (one physical line per cue) and decoded back to a real newline on the
+  way out, so two-line cues survive translation intact.
 - `review`'s line-length check now measures on-screen **display width** (`display_width`) instead
   of `len()`, so it agrees with `tighten` and no longer undercounts CJK/fullwidth text at one
   column per glyph.

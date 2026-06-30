@@ -20,6 +20,7 @@ from translate_subs.ai.provider import (
     build_translation_prompt,
     parse_translation_reply,
 )
+from translate_subs.domain.models import TranslatableUnit
 from translate_subs.subs.extractor import extract_units
 
 SAMPLE_CONTEXT = {
@@ -96,6 +97,25 @@ def test_translation_prompt_lists_only_translate_ids(sample_ass):
     assert "TRANSLATE:" in prompt
     assert "[0002]" in prompt
     assert "CONTEXT (before):" in prompt
+
+
+def test_multiline_cue_stays_single_prompt_line_and_round_trips():
+    # A cue with an internal line break must not split into an unlabeled second physical line in
+    # the prompt, and the break must survive translation as a real newline for reinsertion.
+    unit = TranslatableUnit(
+        id="0001", event_index=0, start=0, end=1000, style="Default", text="First line\nSecond line"
+    )
+    jobs = build_jobs([unit], target="es", rules=[], block_size=1, context=0)
+    prompt = build_translation_prompt(jobs[0])
+
+    section = prompt.split("TRANSLATE:")[1].split("\n\n")[0]
+    body = [ln for ln in section.splitlines() if ln.strip()]
+    # Exactly one physical line carries the cue, and the break is shown as the literal token.
+    assert body == ["[0001] ?: First line\\nSecond line"]
+
+    # The model echoes the \n token; parsing turns it back into a real newline.
+    parsed = parse_translation_reply(json.dumps({"0001": "Primera línea\\nSegunda línea"}), jobs[0])
+    assert parsed == {"0001": "Primera línea\nSegunda línea"}
 
 
 def test_claude_provider_round_trip_with_fake_runner(sample_ass):

@@ -187,7 +187,15 @@ class FileHandoffProvider(TranslationProvider):
 
 
 def _format_lines(lines: list[JobLine]) -> str:
-    return "\n".join(f"[{line.id}] {line.speaker or '?'}: {line.text}" for line in lines)
+    # Each unit must stay on a single physical line so the `[ID] Speaker: text` framing is
+    # unambiguous. A cue with an internal break carries a real newline in `text`; left raw it
+    # would split into an unlabeled second physical line the model can't attribute to an id. Show
+    # the break as the literal two-character token `\n` (the prompt tells the model to keep it).
+    rendered = []
+    for line in lines:
+        text = line.text.replace("\n", "\\n")
+        rendered.append(f"[{line.id}] {line.speaker or '?'}: {text}")
+    return "\n".join(rendered)
 
 
 def build_translation_prompt(job: TranslationJobIn) -> str:
@@ -195,7 +203,8 @@ def build_translation_prompt(job: TranslationJobIn) -> str:
         f"Translate the subtitle lines below into {job.target}.",
         "Each line is `[ID] Speaker: visible text`. Translate ONLY the lines under "
         "TRANSLATE; the CONTEXT lines are for reference and must not be returned.",
-        "Preserve meaning, tone and any '\\n' line breaks. Do not add or drop lines.",
+        "A line break inside a cue is shown as the literal token \\n; keep it as \\n in your "
+        "output. Preserve meaning and tone. Do not add or drop lines.",
     ]
     if job.rules:
         parts.append("Rules:\n" + "\n".join(f"- {r}" for r in job.rules))
@@ -245,7 +254,10 @@ def parse_translation_reply(raw: str, job: TranslationJobIn) -> dict[str, str]:
             f"Block {job.block_id}: non-string translations for {non_text[:3]}.",
             retryable=True,
         )
-    translations = {str(k): v for k, v in data.items()}
+    # The source is shown with line breaks as the literal token `\n`, so the model echoes it back
+    # the same way; turn it into a real newline (a model that instead emitted a JSON newline escape
+    # already has one, and this leaves that untouched) so reinsertion produces an actual break.
+    translations = {str(k): v.replace("\\n", "\n") for k, v in data.items()}
     empty = sorted(key for key, value in translations.items() if not value.strip())
     if empty:
         raise IncompleteTranslation(job.block_id, translations, empty)
