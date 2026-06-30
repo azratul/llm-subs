@@ -6,6 +6,20 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+- `EpisodeContext` (the saved `episode.context.json`) now carries a `schema_version` field so a
+  future format change can detect and migrate older files. The model stays liberal about unknown
+  keys (it validates the raw model reply), and legacy files without the field load as version 1.
+
+### Fixed
+- `review`'s line-length check now measures on-screen **display width** (`display_width`) instead
+  of `len()`, so it agrees with `tighten` and no longer undercounts CJK/fullwidth text at one
+  column per glyph.
+- `analyze` now persists the episode context file **after** merging findings into series memory,
+  not before. Previously a crash between the two left a context with a current `source_hash`, so a
+  later `batch --pre-analyze` would treat the episode as already analyzed (`skip_if_current`) and
+  never merge its characters/glossary into memory.
+
 ## [0.4.0] - 2026-06-30
 
 ### Fixed

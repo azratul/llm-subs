@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from translate_subs.readability.metrics import display_width
 from translate_subs.review.models import Finding, ReviewLine
 
 DEFAULT_MAX_CHARS = 42  # per visual line; matches readability limits (Phase 5).
@@ -61,13 +62,13 @@ def check_name_consistency(lines: list[ReviewLine], names: list[str]) -> list[Fi
 def check_line_length(lines: list[ReviewLine], max_chars: int = DEFAULT_MAX_CHARS) -> list[Finding]:
     findings = []
     for line in lines:
-        longest = max((len(seg) for seg in line.target.split("\n")), default=0)
+        longest = max((display_width(seg) for seg in line.target.split("\n")), default=0)
         if longest > max_chars:
             findings.append(
                 Finding(
                     id=line.id,
                     kind="length",
-                    message=f"Line exceeds {max_chars} chars ({longest}).",
+                    message=f"Line exceeds {max_chars} columns ({longest}).",
                     current=line.target,
                 )
             )

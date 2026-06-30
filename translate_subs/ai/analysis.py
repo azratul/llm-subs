@@ -15,6 +15,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Callable
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -37,6 +38,9 @@ def source_digest(units: list[TranslatableUnit]) -> str:
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()[:16]
 
 
+CONTEXT_SCHEMA_VERSION: Literal[1] = 1
+
+
 class EpisodeCharacter(BaseModel):
     name: str
     gender: str = "unknown"  # "male" | "female" | "unknown"
@@ -46,6 +50,11 @@ class EpisodeCharacter(BaseModel):
 
 
 class EpisodeContext(BaseModel):
+    # Deliberately liberal (no extra="forbid"): this validates the raw model reply, so an
+    # unrequested extra key from a chatty model is ignored rather than failing the analysis.
+    # Default lets legacy files without the field still load as v1; a future format bump can
+    # detect and migrate older files instead of trusting them blindly.
+    schema_version: Literal[1] = CONTEXT_SCHEMA_VERSION
     episode_summary: str = ""
     characters: list[EpisodeCharacter] = Field(default_factory=list)
     glossary: dict[str, str] = Field(default_factory=dict)

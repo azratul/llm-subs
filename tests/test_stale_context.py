@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pysubs2
+import pytest
 
 from translate_subs import config, pipeline
 from translate_subs.ai.analysis import EpisodeContext, source_digest
@@ -29,6 +30,15 @@ def _save_srt(path, *texts):
     for i, text in enumerate(texts):
         subs.events.append(pysubs2.SSAEvent(start=i * 2000, end=i * 2000 + 1500, text=text))
     subs.save(str(path), format_="srt")
+
+
+def test_legacy_context_without_schema_version_loads_as_v1():
+    # Files written before schema_version existed have no such key; they must still load,
+    # defaulting to version 1, so the field is a safe forward-compatible addition.
+    legacy = '{"episode_summary": "Old.", "glossary": {"Sword": "Espada"}}'
+    ctx = EpisodeContext.model_validate_json(legacy)
+    assert ctx.schema_version == 1
+    assert ctx.glossary == {"Sword": "Espada"}
 
 
 def test_source_digest_is_stable_and_content_sensitive():
@@ -60,6 +70,30 @@ def test_analyze_stores_and_merges_source_hash(tmp_path, monkeypatch):
     assert saved.source_hash == source_digest(units)
     # The analysis findings were merged into series memory.
     assert result.merge.applied
+
+
+def test_context_not_written_if_memory_merge_fails(tmp_path, monkeypatch):
+    # The context file must be persisted *after* the memory merge: it is what `skip_if_current`
+    # trusts to decide an episode is already analyzed. If it were written first and the merge then
+    # crashed, a later `--pre-analyze` would skip this episode and lose its findings. So a merge
+    # failure must leave no context file behind.
+    from translate_subs.workflows import memory as memory_workflow
+
+    monkeypatch.setattr(config, "PROJECTS_DIR", tmp_path / "projects")
+    src = tmp_path / "ep.en.srt"
+    _save_srt(src, "Aya draws her sword.")
+
+    def _boom(*_args, **_kwargs):
+        raise RuntimeError("merge failed")
+
+    monkeypatch.setattr(memory_workflow, "merge_into_memory", _boom)
+
+    with pytest.raises(RuntimeError, match="merge failed"):
+        pipeline.analyze_subtitle(
+            src, project="P", interactive=False, runner=lambda _prompt: _ANALYSIS_REPLY
+        )
+
+    assert not context_path("P", "es-latam", episode_key(src)).exists()
 
 
 def test_translate_flags_stale_context(tmp_path, monkeypatch):

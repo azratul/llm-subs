@@ -61,6 +61,17 @@ def test_check_name_and_empty_and_length():
     assert len(check_line_length([_line("0001", "s", long)], max_chars=42)) == 1
 
 
+def test_check_line_length_measures_display_width():
+    # CJK glyphs occupy two columns, so 22 of them exceed the 42-column budget even though
+    # len() == 22 would not. review must agree with tighten, which measures display width.
+    wide = "\u3042" * 22
+    assert len(check_line_length([_line("0001", "s", wide)], max_chars=42)) == 1
+    # A combining mark adds no column: "e" + U+0301 is one column wide. 40 such pairs that
+    # len() counts as 80 chars measure as 40 columns -- under the limit, so no finding.
+    combining = "e\u0301" * 40
+    assert check_line_length([_line("0001", "s", combining)], max_chars=42) == []
+
+
 def test_parse_findings_handles_array_and_fences():
     raw = (
         "```json\n"

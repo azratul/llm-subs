@@ -130,8 +130,11 @@ def analyze_subtitle(
     # Record the source fingerprint so later runs can detect a changed subtitle.
     context.source_hash = source_digest(units)
 
-    out_path = context_path(project_name, target, episode_name)
-    atomic_write_text(out_path, context.model_dump_json(indent=2), private=True)
+    # Merge into series memory *before* persisting the context file. The context's source_hash
+    # is what `skip_if_current` trusts to decide an episode is already analyzed; if the file were
+    # written first and the process died before the merge, a later run would skip this episode and
+    # its findings would never reach series memory. Persisting last makes the file a true marker
+    # that the merge completed (re-merging the same context is idempotent if the merge is retried).
     report = merge_into_memory(
         project_name,
         context,
@@ -139,6 +142,8 @@ def analyze_subtitle(
         policy=on_conflict,
         resolver=conflict_resolver,
     )
+    out_path = context_path(project_name, target, episode_name)
+    atomic_write_text(out_path, context.model_dump_json(indent=2), private=True)
     return AnalyzeResult(
         source=source,
         context_path=out_path,
