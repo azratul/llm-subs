@@ -2,7 +2,28 @@
 
 from __future__ import annotations
 
+import unicodedata
 from dataclasses import dataclass
+
+
+def display_width(text: str) -> int:
+    """On-screen column width, not code-point count.
+
+    `len()` mismeasures real subtitles: a combining accent adds no column, and a CJK/fullwidth
+    glyph occupies two. Counting columns instead keeps the same limits (42 columns, 18 cols/s)
+    meaningful for Japanese, Chinese and accented text. For plain Latin this equals `len()`.
+
+    Approximation, not a full text-shaper: emoji ZWJ sequences and regional-indicator flags are
+    counted per code point rather than per grapheme cluster, so a multi-code-point emoji may
+    over-count. Reading speed (cps) reuses this same width as a pragmatic proxy rather than a
+    separate perceptual model. Good enough to flag clearly over-limit lines; not a typographer.
+    """
+    width = 0
+    for ch in text:
+        if unicodedata.combining(ch) or unicodedata.category(ch) in ("Mn", "Me"):
+            continue  # combining marks stack onto the previous glyph
+        width += 2 if unicodedata.east_asian_width(ch) in ("W", "F") else 1
+    return width
 
 
 @dataclass(frozen=True)
@@ -31,13 +52,14 @@ class LineMetrics:
 
 def measure(text: str, start_ms: int, end_ms: int) -> LineMetrics:
     lines = text.split("\n")
-    chars_total = sum(len(line) for line in lines)
+    widths = [display_width(line) for line in lines]
+    chars_total = sum(widths)
     duration_ms = max(0, end_ms - start_ms)
     seconds = duration_ms / 1000
     cps = chars_total / seconds if seconds > 0 else float("inf")
     return LineMetrics(
         chars_total=chars_total,
-        max_line_chars=max((len(line) for line in lines), default=0),
+        max_line_chars=max(widths, default=0),
         n_lines=len(lines),
         duration_ms=duration_ms,
         cps=cps,

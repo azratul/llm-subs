@@ -35,6 +35,23 @@ def test_exceeds_each_reason():
     assert exceeds(measure("Hola.", 0, 2000), limits) == []
 
 
+def test_display_width_handles_cjk_and_combining():
+    from translate_subs.readability.metrics import display_width
+
+    assert display_width("hola") == 4  # Latin: one column each
+    assert display_width("日本語") == 6  # CJK: two columns each
+    # A combining acute accent adds no column (decomposed "é" = "e" + U+0301).
+    assert display_width("é") == 1
+    # A wide line that len() would pass (5 chars) but is 10 columns wide.
+    assert display_width("テストです") == 10
+
+
+def test_measure_uses_display_width_for_cjk():
+    m = measure("日本語", 0, 1000)  # 3 glyphs, 6 columns in 1s
+    assert m.max_line_chars == 6
+    assert m.cps == 6.0
+
+
 def test_char_budget():
     m = measure("whatever", 0, 2000)  # 2 seconds
     assert m.char_budget(ReadabilityLimits()) == 36  # 18 cps * 2s
@@ -178,6 +195,21 @@ def test_tighten_report_includes_provenance_manifest(tmp_path, monkeypatch):
     assert "Translated: ep01.es.srt" in text
     assert "Target: es-latam" in text
     assert "Content fingerprint:" in text
+    # No LLM pass ran, so the backend is recorded as none rather than implying a model touched it.
+    assert "Provider: (none)" in text
+
+    # With a compaction pass, the report records which backend produced it.
+    result = pipeline.tighten_subtitle(
+        srt,
+        target="es-latam",
+        project="Show",
+        provider="ollama",
+        model="qwen3:4b",
+        runner=lambda _: json.dumps({"0001": "Corto."}),
+    )
+    text = result.report_path.read_text("utf-8")
+    assert "Provider: ollama" in text
+    assert "Model: qwen3:4b" in text
 
 
 def test_tighten_rejects_compaction_that_does_not_improve(tmp_path, monkeypatch):

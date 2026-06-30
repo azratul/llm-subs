@@ -642,6 +642,59 @@ def test_review_srt_resegmented_skips_llm(tmp_path, monkeypatch):
     assert not llm_called, "LLM must not be called for a re-segmented SRT"
     kinds = {f.kind for f in result.report.findings}
     assert "srt_resegmented" in kinds
+    # No LLM ran, so the report must not claim a provider/model.
+    assert "Provider: (none)" in result.report_path.read_text("utf-8")
+
+
+def test_review_no_llm_reports_no_provider(tmp_path, monkeypatch):
+    # --no-llm runs only deterministic checks; the manifest must say no backend was used and
+    # must not name the (untouched) provider/model.
+    monkeypatch.setattr(config, "PROJECTS_DIR", tmp_path / "projects")
+
+    src = pysubs2.SSAFile()
+    src.events.append(pysubs2.SSAEvent(start=1000, end=3000, text="Hello."))
+    source_path = tmp_path / "ep.en.srt"
+    src.save(str(source_path), format_="srt")
+    tr = pysubs2.SSAFile()
+    tr.events.append(pysubs2.SSAEvent(start=1000, end=3000, text="Hola."))
+    translated_path = tmp_path / "ep.es.srt"
+    tr.save(str(translated_path), format_="srt")
+
+    result = pipeline.review_translation(
+        source_path,
+        translated_path,
+        project="Serie",
+        interactive=False,
+        use_llm=False,
+        provider="claude",
+    )
+    text = result.report_path.read_text("utf-8")
+    assert "Provider: (none)" in text
+    assert "Model: (none)" in text
+
+
+def test_review_records_effective_model_default(tmp_path, monkeypatch):
+    # When no --model is given, the manifest records the resolved default, not "(default)".
+    monkeypatch.setattr(config, "PROJECTS_DIR", tmp_path / "projects")
+
+    src = pysubs2.SSAFile()
+    src.events.append(pysubs2.SSAEvent(start=1000, end=3000, text="Hello."))
+    source_path = tmp_path / "ep.en.srt"
+    src.save(str(source_path), format_="srt")
+    tr = pysubs2.SSAFile()
+    tr.events.append(pysubs2.SSAEvent(start=1000, end=3000, text="Hola."))
+    translated_path = tmp_path / "ep.es.srt"
+    tr.save(str(translated_path), format_="srt")
+
+    result = pipeline.review_translation(
+        source_path,
+        translated_path,
+        project="Serie",
+        interactive=False,
+        provider="claude",
+        runner=lambda _: "[]",
+    )
+    assert "Model: claude-opus-4-8" in result.report_path.read_text("utf-8")
 
 
 def test_review_srt_same_count_resegmented_skips_llm(tmp_path, monkeypatch):

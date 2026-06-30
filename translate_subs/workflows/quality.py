@@ -9,7 +9,7 @@ from pathlib import Path
 from translate_subs import config
 from translate_subs.ai.analysis import EpisodeContext, source_digest
 from translate_subs.memory.store import ProjectMemory, atomic_write_text
-from translate_subs.naming import base_stem, validate_target
+from translate_subs.naming import base_stem, effective_model, validate_target
 from translate_subs.readability.compactor import FlaggedLine, compact_lines
 from translate_subs.readability.metrics import (
     ReadabilityLimits,
@@ -138,7 +138,8 @@ def review_translation(
         names=names,
         max_chars=max_chars,
     )
-    if use_llm and lines and not srt_resegmented:
+    llm_ran = use_llm and bool(lines) and not srt_resegmented
+    if llm_ran:
         findings += review_lines(
             lines,
             glossary=glossary,
@@ -212,11 +213,13 @@ def review_translation(
         "Target": target,
         "Source fingerprint": source_digest(units),
         "Translated fingerprint": translated_fingerprint,
-        "Provider": provider,
-        "Model": model or "(default)",
+        # Only name a backend when the linguistic pass actually ran (deterministic-only and
+        # re-segmented-SRT runs touch no LLM), and record the resolved model, not "(default)".
+        "Provider": provider if llm_ran else "(none)",
+        "Model": effective_model(provider, model) if llm_ran else "(none)",
     }
     out_path = review_path(project_name, target, episode_name)
-    atomic_write_text(out_path, render_markdown(report, manifest))
+    atomic_write_text(out_path, render_markdown(report, manifest), private=True)
 
     return ReviewResult(
         report=report,
@@ -336,9 +339,13 @@ def tighten_subtitle(
         "Translated": translated_path.name,
         "Target": target,
         "Content fingerprint": content_fingerprint,
+        # Record which backend compacted the lines so a report's provenance is self-contained
+        # (it isn't, otherwise, distinguishable from one produced by a different model).
+        "Provider": provider if (use_llm and flagged) else "(none)",
+        "Model": effective_model(provider, model) if (use_llm and flagged) else "(none)",
     }
     atomic_write_text(
-        out_path, render_readability_md(base_stem(translated_path), entries, manifest)
+        out_path, render_readability_md(base_stem(translated_path), entries, manifest), private=True
     )
 
     return TightenResult(
