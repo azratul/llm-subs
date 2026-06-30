@@ -24,10 +24,11 @@ def capture_run(monkeypatch):
     def fake_which(name):
         return f"/usr/bin/{name}"
 
-    def fake_run(cmd, input=None, capture_output=True, text=True, timeout=None, cwd=None):
+    def fake_run(cmd, input=None, capture_output=True, text=True, timeout=None, cwd=None, env=None):
         calls["cmd"] = cmd
         calls["input"] = input
         calls["cwd"] = cwd
+        calls["env"] = env
         if "-o" in cmd:  # codex writes its final message to this file
             out = Path(cmd[cmd.index("-o") + 1])
             # Only write when -o points at an actual output path (codex), not a flag value.
@@ -72,6 +73,17 @@ def test_opencode_passes_message_as_arg(capture_run):
     assert "--dangerously-skip-permissions" not in cmd
     assert cmd[-1] == "PROMPT"
     assert capture_run["input"] is None
+
+
+def test_opencode_denies_all_tools_via_inline_config(capture_run):
+    # Hardening: `--pure` alone leaves built-in tools (read/bash/webfetch) allowed; we inject an
+    # inline config that denies every tool so untrusted subtitle text can't read/exfiltrate files.
+    import json
+
+    OpencodeCli()("PROMPT")
+    env = capture_run["env"]
+    assert env is not None and "OPENCODE_CONFIG_CONTENT" in env
+    assert json.loads(env["OPENCODE_CONFIG_CONTENT"]) == {"permission": {"*": "deny"}}
 
 
 def test_cli_adapters_run_from_throwaway_cwd(capture_run):

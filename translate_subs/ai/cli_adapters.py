@@ -9,6 +9,8 @@ build the prompt and parse the reply, so these stay free of domain knowledge.
 
 from __future__ import annotations
 
+import json
+import os
 import shutil
 import subprocess
 import tempfile
@@ -21,7 +23,13 @@ from translate_subs.ai.claude_cli import ClaudeCli
 from translate_subs.ai.provider import ProviderError, backend_error_is_retryable
 
 
-def _run(binary_name: str, cmd: list[str], prompt: str | None, timeout: int) -> str:
+def _run(
+    binary_name: str,
+    cmd: list[str],
+    prompt: str | None,
+    timeout: int,
+    env: dict[str, str] | None = None,
+) -> str:
     binary = shutil.which(binary_name)
     if binary is None:
         raise ProviderError(f"`{binary_name}` CLI not found on PATH.", retryable=False)
@@ -31,7 +39,13 @@ def _run(binary_name: str, cmd: list[str], prompt: str | None, timeout: int) -> 
     try:
         with tempfile.TemporaryDirectory(prefix="llm-subs-cwd-") as cwd:
             proc = subprocess.run(
-                cmd, input=prompt, capture_output=True, text=True, timeout=timeout, cwd=cwd
+                cmd,
+                input=prompt,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                cwd=cwd,
+                env=env,
             )
     except subprocess.TimeoutExpired as exc:
         raise ProviderError(
@@ -122,13 +136,18 @@ class OpencodeCli:
     timeout: int = 600
 
     def __call__(self, prompt: str) -> str:
-        # --pure: no external plugins; and we never pass --dangerously-skip-permissions, so
-        # tool actions still require (here, unavailable) approval rather than auto-running.
+        # Hardening: `--pure` only disables external plugins — opencode's built-in tools
+        # (read/bash/webfetch/websearch/edit) are allowed by default, and from a headless `run`
+        # untrusted subtitle text could read absolute paths (e.g. ~/.ssh) and exfiltrate them. We
+        # deny every tool via an inline config (highest standard precedence, overriding any global
+        # opencode.json that allows tools): translation needs no tools, only text in/text out. This
+        # gives opencode a containment comparable to `claude --disallowedTools`.
+        env = {**os.environ, "OPENCODE_CONFIG_CONTENT": json.dumps({"permission": {"*": "deny"}})}
         cmd = [self.binary, "run", "--pure"]
         if self.model:
             cmd += ["-m", self.model]
         cmd += [prompt]
-        return _run(self.binary, cmd, None, self.timeout)
+        return _run(self.binary, cmd, None, self.timeout, env=env)
 
 
 Runner = Callable[[str], str]

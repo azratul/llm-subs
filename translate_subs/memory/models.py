@@ -49,7 +49,7 @@ class StyleGuide(BaseModel):
     honorifics: str = "keep"
     pronoun_policy: str = "contextual"
     formality_policy: str = "natural"
-    tone: str = "anime-natural"
+    tone: str = "natural"
     names: str = "keep_original"
 
 

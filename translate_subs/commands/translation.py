@@ -141,11 +141,7 @@ def translate(
 ):
     """Translate a subtitle and export <base>.<lang>.<format> (lang from --target)."""
     runtime = _runtime()
-    try:
-        overrides = runtime._project_overrides(ctx, project)
-    except runtime._EXPECTED_ERRORS as exc:
-        runtime.console.print(f"[red]Error:[/red] {exc}")
-        raise typer.Exit(code=1)
+    overrides = runtime._project_overrides(ctx, project)
     target = overrides.get("target", target)
     provider = overrides.get("provider", provider)
     model = overrides.get("model", model)

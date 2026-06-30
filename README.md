@@ -577,7 +577,10 @@ specific items follow.
   restriction so untrusted subtitle text can't talk it into touching your files: `codex` runs
   `--sandbox read-only`, `claude` denies every filesystem/exec/network/subagent tool and ignores
   all MCP servers (`--strict-mcp-config`), `antigravity` (`agy`) runs `--print --sandbox`, and
-  `opencode` runs `--pure` (no external plugins); none is ever given `--dangerously-skip-permissions`.
+  `opencode` runs `--pure` (no external plugins) **plus an inline deny-all permission config** so
+  none of its built-in tools (read/bash/webfetch/websearch) can run — `--pure` alone leaves those
+  tools allowed, so the deny-all config is what actually stops a crafted cue from reading and
+  exfiltrating files; none is ever given `--dangerously-skip-permissions`.
   On top of those flags, each agent CLI is launched from an empty throwaway working directory, so a
   crafted subtitle can't steer it toward files in your real cwd. Caveat: `antigravity` replaced the
   Gemini CLI and is agentic — its `--sandbox` only restricts the terminal (no read-only/no-tools

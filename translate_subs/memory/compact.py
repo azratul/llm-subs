@@ -104,7 +104,7 @@ def detect_character_aliases(runner: Runner, characters: list[CharacterMemory]) 
 
     profiles = "\n".join(f"- {_character_profile(ch)}" for ch in characters)
     prompt = (
-        "You are reviewing a character memory file for an anime series. "
+        "You are reviewing a character memory file for a TV series or film. "
         "The list below may contain duplicate entries for the same character under "
         "different name forms (e.g. given name only vs. family + given name, or a "
         "nickname vs. the full name).\n\n"

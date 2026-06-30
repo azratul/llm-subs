@@ -45,6 +45,25 @@ def test_project_dir_rejects_traversal(bad, monkeypatch, tmp_path):
         pipeline.project_dir(bad)
 
 
+def test_malformed_settings_reports_friendly_error_no_traceback(monkeypatch, tmp_path):
+    # A hand-broken settings.json must produce a short error, not a raw traceback, on the commands
+    # that resolve project defaults before their own try block (analyze/review/tighten/batch).
+    monkeypatch.setattr(config, "PROJECTS_DIR", tmp_path / "projects")
+    proj = tmp_path / "projects" / "P"
+    proj.mkdir(parents=True)
+    (proj / "settings.json").write_text('{"provider": "not-a-real-provider"}', encoding="utf-8")
+
+    src = pysubs2.SSAFile()
+    src.events.append(pysubs2.SSAEvent(start=0, end=2000, text="Hello."))
+    source = tmp_path / "ep.en.srt"
+    src.save(str(source), format_="srt")
+
+    result = CliRunner().invoke(app, ["analyze", str(source), "--project", "P"])
+    assert result.exit_code == 1
+    assert "Error:" in result.output
+    assert "Traceback" not in result.output
+
+
 def test_project_dir_accepts_normal_name_with_spaces(monkeypatch, tmp_path):
     monkeypatch.setattr(config, "PROJECTS_DIR", tmp_path / "projects")
     assert pipeline.project_dir("Kimagure Orange Road").name == "Kimagure Orange Road"

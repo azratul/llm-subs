@@ -6,6 +6,14 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Security
+- `opencode` provider now denies **all** of opencode's built-in tools via an inline deny-all
+  permission config (`OPENCODE_CONFIG_CONTENT`). Previously only `--pure` was passed, which merely
+  disables external plugins and left built-in tools (read/bash/webfetch/websearch) allowed — so a
+  crafted subtitle cue could have made the agent read absolute paths (e.g. `~/.ssh`) and exfiltrate
+  them. Translation needs no tools, so denying everything closes the hole and gives opencode
+  containment comparable to `claude --disallowedTools`.
+
 ### Added
 - `translate` and `batch` accept `--parallel <n>` to set how many blocks translate concurrently
   (default `4` for the `ollama`/`litellm` APIs, `1` for the agent CLIs); lower it to avoid
@@ -14,6 +22,12 @@ All notable changes to this project are documented here. The format follows
   `600`).
 
 ### Changed
+- Default style-guide tone is now the neutral `natural` instead of `anime-natural`, since the tool
+  translates films and non-anime series too; an anime register can still be set per project. The
+  character-dedup prompt no longer assumes the series is anime.
+- `analyze`, `review`, `tighten` and `batch` now report a malformed project `settings.json` as a
+  short error and exit non-zero, instead of leaking a raw traceback (the settings load happened
+  before each command's error handling).
 - `pipeline.py`, documented as the stable public API, now type-checks cleanly under
   `mypy --strict` (the rest of the package stays under the project's standard mypy config).
 - Documented that image-based subtitle tracks (PGS/VobSub) are unsupported and require external

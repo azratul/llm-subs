@@ -112,7 +112,13 @@ def _project_overrides(
     """Return project defaults only for options not explicitly supplied on the command line."""
     if not project:
         return {}
-    settings = load_settings(project_dir(project))
+    try:
+        settings = load_settings(project_dir(project))
+    except _EXPECTED_ERRORS as exc:
+        # A hand-broken settings.json must surface as a short, actionable message, not a traceback,
+        # for every command that resolves project defaults (translate/batch/analyze/review/tighten).
+        console.print(f"[red]Error:[/red] {exc}")
+        raise typer.Exit(code=1)
     overrides: dict[str, str] = {}
     for name in names:
         source = ctx.get_parameter_source(name)
