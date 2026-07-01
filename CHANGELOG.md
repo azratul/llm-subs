@@ -32,8 +32,10 @@ All notable changes to this project are documented here. The format follows
   overwriting any line, since each fix/compaction is a whole-line replacement. Pass
   `--non-interactive`/`--yes`/`-y` to apply without the prompt (as before). `tighten` gained the
   `--yes`/`-y` alias for this.
-- The test suite now runs with `filterwarnings = ["error"]`, so a `DeprecationWarning` from a
-  dependency (or our own code) fails CI instead of scrolling past unnoticed.
+- The test suite now treats warnings as errors (`filterwarnings`), so a `DeprecationWarning` from a
+  dependency (or our own code) fails CI instead of scrolling past unnoticed. `ResourceWarning` is
+  exempt, since it fires non-deterministically from garbage collection rather than signalling a
+  defect.
 
 ### Changed
 - Runtime dependencies gained upper caps (`pydantic<3`, `pysubs2<2`, `typer<1`, `rich<15`) so the

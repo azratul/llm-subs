@@ -87,4 +87,7 @@ exclude = ["tests/"]
 [tool.pytest.ini_options]
 # Warnings are errors: a DeprecationWarning from a dependency (or our own code) fails the suite
 # instead of scrolling past, so upstream deprecations are caught before they become breakage.
-filterwarnings = ["error"]
+# ResourceWarning is excluded: it fires from __del__ during garbage collection (e.g. an HTTPError
+# built in the retry tests), so it surfaces non-deterministically at an unrelated test and reflects
+# GC timing, not a code defect. Everything else still errors.
+filterwarnings = ["error", "ignore::ResourceWarning"]
