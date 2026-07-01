@@ -305,6 +305,55 @@ def test_changed_reasoning_reports_stale(tmp_path, monkeypatch):
         pipeline.translate_subtitle(source, reasoning="high", **kw)
 
 
+def test_changed_memory_reports_stale(tmp_path, monkeypatch):
+    from translate_subs.memory.store import ProjectMemory
+    from translate_subs.workflows.models import StaleOutputError
+    from translate_subs.workflows.support import memory_root
+
+    monkeypatch.setattr(config, "PROJECTS_DIR", tmp_path / "projects")
+    source = tmp_path / "ep.en.srt"
+    _srt_with(source, "Hello Yumi.")
+    kw = dict(provider="identity", interactive=False, fmt="srt", project="P")
+    pipeline.translate_subtitle(source, **kw)
+
+    # Editing the series glossary changes the prompt but not the source: the output is now stale.
+    pm = ProjectMemory.load(memory_root("P", "es-latam"))
+    pm.glossary["Yumi"] = "Yumi-chan"
+    pm.save()
+    with pytest.raises(StaleOutputError, match="memory"):
+        pipeline.translate_subtitle(source, **kw)
+
+
+def test_legacy_manifest_without_memory_hash_not_flagged(tmp_path, monkeypatch):
+    from translate_subs.workflows.models import OutputExistsError
+    from translate_subs.workflows.output_manifest import OutputManifest, write_manifest
+
+    monkeypatch.setattr(config, "PROJECTS_DIR", tmp_path / "projects")
+    source = tmp_path / "ep.en.srt"
+    _srt_with(source, "Hello.")
+    kw = dict(provider="identity", interactive=False, fmt="srt", project="P")
+    pipeline.translate_subtitle(source, **kw)
+
+    # Rewrite the manifest as a pre-memory_hash release would have (field empty): a later run
+    # computes a real digest, but the stored empty value must not spuriously flag the output.
+    manifests = list((tmp_path / "projects").rglob("output.manifest.json"))
+    stored = OutputManifest.model_validate_json(manifests[0].read_text("utf-8"))
+    write_manifest(manifests[0], stored.model_copy(update={"memory_hash": ""}))
+    with pytest.raises(OutputExistsError):
+        pipeline.translate_subtitle(source, **kw)
+
+
+def test_is_stale_tolerates_legacy_empty_memory_hash():
+    from translate_subs.workflows.output_manifest import OutputManifest, is_stale
+
+    base = dict(source_hash="s", target="es-latam", provider="identity", model="")
+    current = OutputManifest(**base, memory_hash="new")
+    # A stored manifest that never recorded a memory hash is not a change...
+    assert not is_stale(OutputManifest(**base, memory_hash=""), current)
+    # ...but once one was recorded, a different value flags the output stale.
+    assert is_stale(OutputManifest(**base, memory_hash="old"), current)
+
+
 def test_legacy_output_without_manifest_reports_output_exists(tmp_path, monkeypatch):
     from translate_subs.workflows.models import OutputExistsError
 

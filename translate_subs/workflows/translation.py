@@ -18,7 +18,11 @@ from translate_subs.ai.cli_adapters import CLI_PROVIDERS
 from translate_subs.ai.provider import ProviderError, TranslationProvider
 from translate_subs.io.media_probe import MediaToolError
 from translate_subs.io.source_resolver import SourceError
-from translate_subs.memory.rules import build_memory_rules, rules_for_text
+from translate_subs.memory.rules import (
+    build_memory_rules,
+    memory_prompt_digest,
+    rules_for_text,
+)
 from translate_subs.memory.store import ProjectMemory
 from translate_subs.naming import (
     DEFAULT_FORMAT,
@@ -49,6 +53,7 @@ from translate_subs.workflows.models import (
 from translate_subs.workflows.output_manifest import (
     OutputManifest,
     describe_change,
+    is_stale,
     load_manifest,
     manifest_path,
     write_manifest,
@@ -142,25 +147,9 @@ def translate_subtitle(
             "Choose a different --output/--out-dir or --target."
         )
     project_name, episode_name = project_episode(source, project)
-    out_manifest = OutputManifest(
-        source_hash=output_source_digest(units),
-        target=target,
-        provider=provider,
-        model=model or "",
-        reasoning=reasoning or "",
-    )
-    out_manifest_path = manifest_path(project_name, target, episode_name)
-    if out_file.exists() and not force:
-        stored = load_manifest(out_manifest_path)
-        if stored is not None and stored != out_manifest:
-            raise StaleOutputError(
-                f"Output is stale ({describe_change(stored, out_manifest)} changed since it was "
-                f"written): {out_file}. Use --force to retranslate."
-            )
-        raise OutputExistsError(f"Output already exists: {out_file}. Use --force to overwrite.")
 
-    jobs_dir = episode_dir(project_name, target, episode_name) / "jobs"
-
+    # Load the steering state before the staleness check so the manifest can fingerprint it: a
+    # glossary/character/context edit changes the translation without touching the source.
     project_memory = ProjectMemory.load(memory_root(project_name, target))
     context_used = False
     context_stale = False
@@ -177,6 +166,26 @@ def translate_subtitle(
     base_rules = config.default_rules(target)
     memory_rules = build_memory_rules(project_memory, context)
     memory_used = bool(project_memory.glossary or project_memory.memory.characters)
+
+    out_manifest = OutputManifest(
+        source_hash=output_source_digest(units),
+        target=target,
+        provider=provider,
+        model=model or "",
+        reasoning=reasoning or "",
+        memory_hash=memory_prompt_digest(memory_rules),
+    )
+    out_manifest_path = manifest_path(project_name, target, episode_name)
+    if out_file.exists() and not force:
+        stored = load_manifest(out_manifest_path)
+        if stored is not None and is_stale(stored, out_manifest):
+            raise StaleOutputError(
+                f"Output is stale ({describe_change(stored, out_manifest)} changed since it was "
+                f"written): {out_file}. Use --force to retranslate."
+            )
+        raise OutputExistsError(f"Output already exists: {out_file}. Use --force to overwrite.")
+
+    jobs_dir = episode_dir(project_name, target, episode_name) / "jobs"
 
     def rules_for(lines):
         text = " ".join(line.text for line in lines)

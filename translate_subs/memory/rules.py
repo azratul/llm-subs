@@ -8,6 +8,8 @@ growing with the whole series history.
 
 from __future__ import annotations
 
+import hashlib
+import json
 from collections.abc import Iterable
 from dataclasses import dataclass
 
@@ -142,6 +144,26 @@ def build_memory_rules(pm: ProjectMemory, ctx: EpisodeContext | None) -> MemoryR
         relationships=relationships,
         speech_styles=speech_styles,
     )
+
+
+def memory_prompt_digest(mr: MemoryRules) -> str:
+    """Stable fingerprint of the memory-derived rules that steer an episode's prompts.
+
+    Folded into the output manifest so a later `batch` run flags an output as stale when the
+    glossary, characters, style guide or episode context changed — a prompt change the source
+    fingerprint can't see. Hashing the merged `MemoryRules` (not the raw stores) keeps it faithful
+    to what is actually injected: series-over-episode precedence and identity-mapping drops are
+    already applied, so an edit that doesn't alter the injected rules doesn't churn the digest.
+    """
+    payload = {
+        "base": mr.base,
+        "glossary": mr.glossary,
+        "genders": mr.genders,
+        "speech_styles": mr.speech_styles,
+        "relationships": sorted(list(rel) for rel in mr.relationships),
+    }
+    raw = json.dumps(payload, sort_keys=True, ensure_ascii=False)
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
 
 
 # Maximum relationship pairs injected per block. Speaker-involved pairs are prioritised;

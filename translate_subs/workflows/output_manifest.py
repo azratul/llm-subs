@@ -3,9 +3,11 @@
 When `translate` writes an output it records, in the per-episode state directory, the source
 fingerprint and the settings that produced it. On a later `batch` run that finds the output already
 present, the stored manifest lets it tell an up-to-date output (skip) from one whose source,
-provider/model or prompt changed since (report as *stale*, never silently overwritten). The source
-fingerprint (`output_source_digest`) covers timing and style, not just text, so a re-timed or
-re-styled source — which leaves the existing output desynchronised — is flagged stale too.
+provider/model, prompt or steering memory changed since (report as *stale*, never silently
+overwritten). The source fingerprint (`output_source_digest`) covers timing and style, not just
+text, so a re-timed or re-styled source — which leaves the existing output desynchronised — is
+flagged stale too; `memory_hash` covers the series memory and episode context, so editing the
+glossary or characters flags outputs whose *source* is unchanged.
 
 The recorded model is the value the user/settings supplied, so an explicit `--model` change is
 detected; relying on a provider's built-in default and that default later changing is not (the
@@ -39,6 +41,11 @@ class OutputManifest(BaseModel):
     # Defaults to "" so a manifest written before this field loads as "no reasoning recorded".
     reasoning: str = ""
     prompt_version: int = TRANSLATION_PROMPT_VERSION
+    # Fingerprint of the series memory + episode context that steered the prompts. A glossary,
+    # character or style-guide edit changes the translation but not the source, so without this the
+    # output would be skipped as up to date. Defaults to "" so a manifest written before this field
+    # loads as "no memory recorded" and is not spuriously flagged (see `_changes`).
+    memory_hash: str = ""
 
 
 def manifest_path(project: str, target: str, episode: str) -> Path:
@@ -63,8 +70,7 @@ def write_manifest(path: Path, manifest: OutputManifest) -> None:
     atomic_write_text(path, manifest.model_dump_json(indent=2), private=True)
 
 
-def describe_change(stored: OutputManifest, current: OutputManifest) -> str:
-    """Human-readable list of what changed between a stored and a current manifest."""
+def _changes(stored: OutputManifest, current: OutputManifest) -> list[str]:
     changed = []
     if stored.source_hash != current.source_hash:
         changed.append("source")
@@ -74,4 +80,19 @@ def describe_change(stored: OutputManifest, current: OutputManifest) -> str:
         changed.append("reasoning")
     if stored.prompt_version != current.prompt_version:
         changed.append("prompt")
-    return ", ".join(changed) or "settings"
+    # Legacy tolerance: a field the stored manifest never recorded (empty on an older release's
+    # manifest) is not a change, so pre-existing outputs aren't all flagged the moment the field is
+    # introduced. `current.memory_hash` is always populated, so only the stored side needs guarding.
+    if stored.memory_hash and stored.memory_hash != current.memory_hash:
+        changed.append("memory")
+    return changed
+
+
+def is_stale(stored: OutputManifest, current: OutputManifest) -> bool:
+    """Whether the stored manifest differs from the current one in a way that dates the output."""
+    return bool(_changes(stored, current))
+
+
+def describe_change(stored: OutputManifest, current: OutputManifest) -> str:
+    """Human-readable list of what changed between a stored and a current manifest."""
+    return ", ".join(_changes(stored, current)) or "settings"

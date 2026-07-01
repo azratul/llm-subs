@@ -15,6 +15,13 @@ All notable changes to this project are documented here. The format follows
   cache roots that is still group/other-accessible (e.g. files written 0644 by an older release),
   with the `chmod` command to fix them. It is a warning, never a hard failure.
 
+### Added
+- The output manifest now fingerprints the **series memory and episode context** that steered the
+  translation (`memory_hash`), so `batch` reports an output as **stale** when the glossary,
+  characters, style guide or episode context changed — a prompt change the source fingerprint alone
+  can't see. Editing the glossary and re-running `batch` now flags affected outputs instead of
+  skipping them. Manifests written before this field are tolerated (no spurious staleness).
+
 ### Changed
 - Widen `rich` support to include the 15.x series (dependency cap raised to `<16`).
 
