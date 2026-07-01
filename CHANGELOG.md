@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-07-01
+
 ### Security
 - State and cache **directories** are now created owner-only (0700), matching the 0600 already used
   for the files inside them. Series memory, episode state and the extracted-track cache can carry
@@ -616,7 +618,8 @@ First tagged release.
   (`extra="forbid"`) and validate on assignment; unexpected LLM gender values fold to `unknown`
   instead of entering memory.
 
-[Unreleased]: https://github.com/azratul/llm-subs/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/azratul/llm-subs/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/azratul/llm-subs/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/azratul/llm-subs/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/azratul/llm-subs/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/azratul/llm-subs/compare/v0.2.8...v0.3.0
