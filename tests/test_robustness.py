@@ -1315,6 +1315,58 @@ def test_batch_cli_fail_on_stale(tmp_path, monkeypatch):
     assert "stale" in strict.stdout
 
 
+def test_batch_translate_isolates_content_error_but_aborts_systemic(tmp_path):
+    from translate_subs.ai.provider import ProviderError
+    from translate_subs.workflows.translation import batch_translate
+
+    eps = [tmp_path / "a.mkv", tmp_path / "b.mkv"]
+
+    def discover(*_a, **_k):
+        return eps
+
+    def content_fail(_path, **_k):  # unparseable reply for THIS episode
+        raise ProviderError("bad json", retryable=True, category="content")
+
+    res = batch_translate(tmp_path, discover_inputs_fn=discover, translate_fn=content_fail)
+    assert res.n_failed == 2 and res.n_translated == 0  # each failed, the season continued
+
+    # Every systemic cause (and an unclassified one) aborts the whole run instead of continuing.
+    for category, retryable in [
+        ("quota", True),
+        ("auth", False),
+        ("service", True),
+        ("unknown", True),
+    ]:
+
+        def systemic_fail(_path, _cat=category, _r=retryable, **_k):
+            raise ProviderError("systemic", retryable=_r, category=_cat)
+
+        with pytest.raises(ProviderError):
+            batch_translate(tmp_path, discover_inputs_fn=discover, translate_fn=systemic_fail)
+
+
+def test_batch_analyze_isolates_content_error_but_aborts_systemic(tmp_path):
+    from translate_subs.ai.provider import ProviderError
+    from translate_subs.workflows.translation import batch_analyze
+
+    eps = [tmp_path / "a.mkv", tmp_path / "b.mkv"]
+
+    def discover(*_a, **_k):
+        return eps
+
+    def content_fail(_path, **_k):
+        raise ProviderError("bad json", retryable=True, category="content")
+
+    res = batch_analyze(tmp_path, discover_inputs_fn=discover, analyze_fn=content_fail)
+    assert res.n_failed == 2 and res.n_analyzed == 0
+
+    def auth_fail(_path, **_k):
+        raise ProviderError("unauthorized", retryable=False, category="auth")
+
+    with pytest.raises(ProviderError):
+        batch_analyze(tmp_path, discover_inputs_fn=discover, analyze_fn=auth_fail)
+
+
 def test_project_status_cli_smoke(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "PROJECTS_DIR", tmp_path / "projects")
     src = tmp_path / "ep.en.srt"

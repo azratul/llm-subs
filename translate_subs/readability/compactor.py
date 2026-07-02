@@ -56,29 +56,34 @@ def parse_compactions(raw: str, requested: set[str]) -> dict[str, str]:
         raise ProviderError(
             f"Compaction reply was not valid JSON: {exc}",
             retryable=True,
+            category="content",
         ) from exc
     if not isinstance(data, dict):
         raise ProviderError(
             "Compaction reply must be a JSON object of id -> text.",
             retryable=True,
+            category="content",
         )
     extra = set(map(str, data)) - requested
     if extra:
         raise ProviderError(
             f"Compaction returned unknown ids: {sorted(extra)}.",
             retryable=True,
+            category="content",
         )
     missing = requested - set(map(str, data))
     if missing:
         raise ProviderError(
             f"Compaction omitted ids: {sorted(missing)}.",
             retryable=True,
+            category="content",
         )
     non_text = sorted(str(key) for key, value in data.items() if not isinstance(value, str))
     if non_text:
         raise ProviderError(
             f"Compaction returned non-string text for ids: {non_text}.",
             retryable=True,
+            category="content",
         )
     result = {str(k): value for k, value in data.items()}
     empty = sorted(key for key, value in result.items() if not value.strip())
@@ -86,6 +91,7 @@ def parse_compactions(raw: str, requested: set[str]) -> dict[str, str]:
         raise ProviderError(
             f"Compaction returned empty text for ids: {empty}.",
             retryable=True,
+            category="content",
         )
     return result
 

@@ -158,6 +158,7 @@ def parse_context(raw: str) -> EpisodeContext:
         raise ProviderError(
             f"Analysis reply was not valid JSON: {exc}",
             retryable=True,
+            category="content",
         ) from exc
     try:
         return EpisodeContext.model_validate(data)
@@ -165,6 +166,7 @@ def parse_context(raw: str) -> EpisodeContext:
         raise ProviderError(
             f"Analysis reply did not match the schema: {exc}",
             retryable=True,
+            category="content",
         ) from exc
 
 

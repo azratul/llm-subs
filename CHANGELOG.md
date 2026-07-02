@@ -15,6 +15,14 @@ All notable changes to this project are documented here. The format follows
   (run `batch` for that).
 
 ### Changed
+- `batch` now **isolates per-episode content failures** instead of aborting the whole season on any
+  `ProviderError`. Each failure carries a cause (`content`, `auth`, `config`, `quota`, `service`,
+  or `unknown`): a **content/protocol** fault — an unparseable reply or wrong ids for one episode —
+  records that episode as `failed` and continues, since the next episode's content is independent.
+  Every systemic cause (auth/config, quota/rate-limit, a service outage) — and any unclassified
+  error, which stays systemic by default — still aborts the run, since retrying the season would
+  just repeat it. The cause is preserved through the retry wrapper so `batch` can see it after
+  retries are exhausted.
 - The output manifest is now **per artifact**, named by a hash of the output's *resolved path*
   (`<hash>.manifest.json`), not one fixed file per episode. Distinct outputs of the same episode —
   an `.ass` and an `.srt`, or the same basename written to two different directories — kept a single

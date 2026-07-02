@@ -32,7 +32,9 @@ def _run(
 ) -> str:
     binary = shutil.which(binary_name)
     if binary is None:
-        raise ProviderError(f"`{binary_name}` CLI not found on PATH.", retryable=False)
+        raise ProviderError(
+            f"`{binary_name}` CLI not found on PATH.", retryable=False, category="config"
+        )
     cmd = [binary, *cmd[1:]]
     # Run from an empty throwaway directory: on top of each CLI's read-only sandbox, this keeps a
     # crafted subtitle from nudging the agent toward whatever files sit in the user's real cwd.
@@ -51,6 +53,7 @@ def _run(
         raise ProviderError(
             f"`{binary_name}` timed out after {timeout}s",
             retryable=True,
+            category="service",
         ) from exc
     if proc.returncode != 0:
         detail = proc.stderr.strip() or proc.stdout.strip() or "no output"

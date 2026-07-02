@@ -19,7 +19,7 @@ from email.utils import parsedate_to_datetime
 from time import time
 from typing import Any
 
-from translate_subs.ai.provider import ProviderError, backend_error_is_retryable
+from translate_subs.ai.provider import ErrorCategory, ProviderError, backend_error_is_retryable
 
 _DEFAULT_OLLAMA_HOST = "http://localhost:11434"
 _RETRYABLE_HTTP_STATUSES = {408, 409, 425, 429, 500, 502, 503, 504}
@@ -48,13 +48,25 @@ def _post_json(url: str, payload: dict[str, Any], timeout: int) -> dict[str, Any
         retry_after = _retry_after_seconds(
             exc.headers.get("Retry-After") if exc.headers is not None else None
         )
+        if exc.code == 429:
+            category: ErrorCategory = "quota"
+        elif exc.code in (401, 403):
+            category = "auth"
+        elif retryable:  # 5xx and transient 4xx (408/409/425): the server/link, not our config
+            category = "service"
+        else:
+            category = "config"
         raise ProviderError(
             f"Request to {url} failed with HTTP {exc.code}: {exc.reason}",
             retryable=retryable,
             retry_after=retry_after,
+            category=category,
         ) from exc
     except urllib.error.URLError as exc:
-        raise ProviderError(f"Request to {url} failed: {exc}", retryable=True) from exc
+        # Connection refused / timeout / DNS: the server is unreachable — systemic, not per-episode.
+        raise ProviderError(
+            f"Request to {url} failed: {exc}", retryable=True, category="service"
+        ) from exc
     except UnicodeDecodeError as exc:
         raise ProviderError(
             f"Response from {url} was not valid UTF-8: {exc}",
@@ -91,6 +103,7 @@ def _normalize_host(host: str) -> str:
             raise ProviderError(
                 f"Ollama host must use http:// or https://, got {scheme}://.",
                 retryable=False,
+                category="config",
             )
         return host
     return f"http://{host}"
@@ -118,6 +131,7 @@ class OllamaRunner:
             raise ProviderError(
                 "Ollama requires --model (e.g. qwen3:4b).",
                 retryable=False,
+                category="config",
             )
         base = _normalize_host(self.host or os.environ.get("OLLAMA_HOST", _DEFAULT_OLLAMA_HOST))
         payload: dict[str, Any] = {

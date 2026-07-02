@@ -127,8 +127,19 @@ def test_ollama_wraps_invalid_json_as_retryable(monkeypatch):
     assert exc.value.retryable is True
 
 
-@pytest.mark.parametrize(("status", "retryable"), [(401, False), (429, True), (503, True)])
-def test_ollama_classifies_http_errors(monkeypatch, status, retryable):
+@pytest.mark.parametrize(
+    ("status", "retryable", "category"),
+    [
+        (401, False, "auth"),
+        (403, False, "auth"),
+        (400, False, "config"),
+        (408, True, "service"),
+        (409, True, "service"),
+        (429, True, "quota"),
+        (503, True, "service"),
+    ],
+)
+def test_ollama_classifies_http_errors(monkeypatch, status, retryable, category):
     headers = {"Retry-After": "5"} if status == 429 else {}
 
     def fail(*args, **kwargs):
@@ -145,3 +156,51 @@ def test_ollama_classifies_http_errors(monkeypatch, status, retryable):
         api_adapters.OllamaRunner(model="qwen3:4b")("prompt")
     assert exc.value.retryable is retryable
     assert exc.value.retry_after == (5.0 if status == 429 else None)
+    # 429 -> quota, 5xx -> service, 401/403 -> auth, other 4xx -> config: `batch` uses this to tell
+    # a systemic backend fault (abort) from a per-episode one (continue).
+    assert exc.value.category == category
+
+
+def test_ollama_connection_failure_is_service_category(monkeypatch):
+    def refuse(*a, **k):
+        raise urllib.error.URLError("connection refused")
+
+    monkeypatch.setattr(api_adapters.urllib.request, "urlopen", refuse)
+    with pytest.raises(ProviderError) as exc:
+        api_adapters.OllamaRunner(model="qwen3:4b")("prompt")
+    assert exc.value.category == "service"  # unreachable server is systemic, not per-episode
+
+
+def test_parse_translation_reply_tags_content_category():
+    from translate_subs.ai.job_protocol import JobLine, TranslationJobIn
+    from translate_subs.ai.provider import parse_translation_reply
+
+    job = TranslationJobIn(
+        block_id="b1", target="es-latam", translate=[JobLine(id="0001", text="Hi")]
+    )
+    # Invalid JSON and an id mismatch are both content/protocol faults local to this block.
+    with pytest.raises(ProviderError) as exc:
+        parse_translation_reply("not json at all", job)
+    assert exc.value.category == "content"
+    with pytest.raises(ProviderError) as exc:
+        parse_translation_reply('{"9999": "x"}', job)
+    assert exc.value.category == "content"
+
+
+def test_retry_provider_call_preserves_category():
+    from translate_subs.ai.provider import retry_provider_call
+
+    def boom():
+        raise ProviderError("bad reply", retryable=True, category="content")
+
+    # The category must survive the re-wrap on exhausted retries, or `batch` can't see it.
+    with pytest.raises(ProviderError) as exc:
+        retry_provider_call(boom, max_retries=1, label="Translate", sleep=lambda _s: None)
+    assert exc.value.category == "content"
+
+    def auth_boom():
+        raise ProviderError("unauthorized", retryable=False, category="auth")
+
+    with pytest.raises(ProviderError) as exc:
+        retry_provider_call(auth_boom, max_retries=2, label="Translate", sleep=lambda _s: None)
+    assert exc.value.category == "auth"

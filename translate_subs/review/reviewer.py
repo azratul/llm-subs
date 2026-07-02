@@ -88,6 +88,7 @@ def parse_findings(raw: str) -> list[Finding]:
         raise ProviderError(
             f"Review reply was not valid JSON: {exc}",
             retryable=True,
+            category="content",
         ) from exc
     if isinstance(data, dict):
         data = data.get("findings", [])
@@ -95,6 +96,7 @@ def parse_findings(raw: str) -> list[Finding]:
         raise ProviderError(
             "Review reply must be a JSON array of findings.",
             retryable=True,
+            category="content",
         )
 
     findings: list[Finding] = []

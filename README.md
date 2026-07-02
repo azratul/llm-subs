@@ -368,7 +368,11 @@ llm-subs batch . --glob '*.mkv' --glob '*.mp4' -r          # several patterns, r
 It selects files with `--glob` (default `*.mkv`, repeatable; `-r`/`--recursive` descends into
 subdirectories) and skips any file that already looks like one of its own outputs. Each episode
 is independent: one whose output already exists is **skipped** (pass `--force` to redo it), and one
-that errors is **failed** and the run moves on — a single bad episode never aborts the season. If
+that errors is **failed** and the run moves on — a single bad episode never aborts the season. That
+applies to a **content/protocol** failure too (an unparseable model reply or wrong ids for that
+episode): it is recorded `failed` and the run continues. A **systemic** failure, on the other hand —
+auth/config, quota/rate-limit, or a service outage — aborts the whole run, since retrying every
+remaining episode would just repeat it. If
 an existing output is **stale** — its source, provider/model or prompt changed since it was written
 — it is reported as such (a warning, not an error) rather than skipped, so you know to rerun it with
 `--force`; the existing file is never overwritten on its own. A summary table reports

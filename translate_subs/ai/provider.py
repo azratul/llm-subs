@@ -16,7 +16,7 @@ import time
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from pathlib import Path
-from typing import TypeVar
+from typing import Literal, TypeVar
 
 from translate_subs.ai.job_protocol import JobLine, TranslationJobIn, TranslationJobOut
 from translate_subs.fsutil import atomic_write_text, ensure_private_dir
@@ -44,8 +44,15 @@ def backend_error_is_retryable(message: str) -> bool:
     return not any(marker in normalized for marker in _PERMANENT_BACKEND_MARKERS)
 
 
+# Failure cause, so `batch` can isolate a per-episode content/protocol fault from a systemic one.
+# "content" is the only per-episode cause (see `is_per_episode_failure`); everything else —
+# including the default "unknown" — is systemic and aborts the run, so an unclassified failure is
+# never silently swallowed episode by episode.
+ErrorCategory = Literal["auth", "config", "quota", "service", "content", "unknown"]
+
+
 class ProviderError(Exception):
-    """Backend/protocol failure with retry metadata."""
+    """Backend/protocol failure with retry metadata and a failure cause."""
 
     def __init__(
         self,
@@ -53,10 +60,23 @@ class ProviderError(Exception):
         *,
         retryable: bool = False,
         retry_after: float | None = None,
+        category: ErrorCategory = "unknown",
     ) -> None:
         self.retryable = retryable
         self.retry_after = retry_after
+        self.category = category
         super().__init__(message)
+
+
+def is_per_episode_failure(exc: ProviderError) -> bool:
+    """True for a content/protocol fault local to one episode (invalid JSON, wrong ids).
+
+    `batch` records these as a failed episode and continues, since the next episode's content is
+    independent. Every other cause — auth, config, quota/rate-limit, a service outage, or an
+    unclassified ("unknown") error — is systemic: retrying the whole season would repeat it, so it
+    aborts the run instead.
+    """
+    return exc.category == "content"
 
 
 class IncompleteTranslation(ProviderError):
@@ -107,7 +127,9 @@ def retry_provider_call(
         except ProviderError as exc:
             last_error = exc
             if not exc.retryable:
-                raise ProviderError(f"{label} failed: {exc}", retryable=False) from exc
+                raise ProviderError(
+                    f"{label} failed: {exc}", retryable=False, category=exc.category
+                ) from exc
             if i < attempts - 1:
                 if exc.retry_after is not None:
                     delay = max(0.0, exc.retry_after)
@@ -122,6 +144,7 @@ def retry_provider_call(
     raise ProviderError(
         f"{label} failed after {attempts} attempt(s): {last_error}",
         retryable=last_error.retryable,
+        category=last_error.category,
     ) from last_error
 
 
@@ -231,11 +254,13 @@ def parse_translation_reply(raw: str, job: TranslationJobIn) -> dict[str, str]:
         raise ProviderError(
             f"Block {job.block_id}: reply was not valid JSON: {exc}",
             retryable=True,
+            category="content",
         ) from exc
     if not isinstance(data, dict):
         raise ProviderError(
             f"Block {job.block_id}: expected a JSON object of id -> text.",
             retryable=True,
+            category="content",
         )
 
     expected = {line.id for line in job.translate}
@@ -246,6 +271,7 @@ def parse_translation_reply(raw: str, job: TranslationJobIn) -> dict[str, str]:
         raise ProviderError(
             f"Block {job.block_id}: id mismatch (missing={missing}, extra={extra}).",
             retryable=True,
+            category="content",
         )
     # Each value must already be a string; a list/dict from the model must not be silently
     # coerced (str([...]) would produce a bogus but non-empty "translation").
@@ -254,6 +280,7 @@ def parse_translation_reply(raw: str, job: TranslationJobIn) -> dict[str, str]:
         raise ProviderError(
             f"Block {job.block_id}: non-string translations for {non_text[:3]}.",
             retryable=True,
+            category="content",
         )
     # The source is shown with line breaks as the literal token `\n`, so the model echoes it back
     # the same way; turn it into a real newline (a model that instead emitted a JSON newline escape

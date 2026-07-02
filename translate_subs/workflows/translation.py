@@ -15,7 +15,11 @@ from translate_subs.ai.checkpoint import (
     translate_with_checkpoint,
 )
 from translate_subs.ai.cli_adapters import CLI_PROVIDERS
-from translate_subs.ai.provider import ProviderError, TranslationProvider
+from translate_subs.ai.provider import (
+    ProviderError,
+    TranslationProvider,
+    is_per_episode_failure,
+)
 from translate_subs.io.media_probe import MediaToolError
 from translate_subs.io.source_resolver import SourceError
 from translate_subs.memory.rules import (
@@ -315,8 +319,12 @@ def batch_analyze(
             analyze_fn(path, **analyze_kwargs)
         except AnalysisCurrentError:
             result.items.append(AnalyzeBatchItem(path, "skipped"))
-        except ProviderError:
-            raise  # systemic failure (quota, bad model, auth) — abort the batch
+        except ProviderError as exc:
+            # A content/protocol fault (unparseable reply) is local to this episode: record it and
+            # continue. Auth/config/quota/service (or an unclassified error) is systemic — abort.
+            if not is_per_episode_failure(exc):
+                raise
+            result.items.append(AnalyzeBatchItem(path, "failed", error=str(exc)))
         except (PipelineError, *_EXPECTED_PIPELINE_ERRORS) as exc:
             result.items.append(AnalyzeBatchItem(path, "failed", error=str(exc)))
         else:
@@ -361,8 +369,13 @@ def batch_translate(
         except StaleOutputError as exc:
             # Source/model/prompt changed since this output was written: warn, never overwrite.
             result.items.append(BatchItem(path, "stale", error=str(exc)))
-        except ProviderError:
-            raise  # systemic failure (quota, bad model, auth) — abort the batch
+        except ProviderError as exc:
+            # A content/protocol fault (unparseable reply, wrong ids) is local to this episode:
+            # record it and move on. Auth/config/quota/service (or an unclassified error) is
+            # systemic — retrying the whole season would repeat it — so abort.
+            if not is_per_episode_failure(exc):
+                raise
+            result.items.append(BatchItem(path, "failed", error=str(exc)))
         except (PipelineError, *_EXPECTED_PIPELINE_ERRORS) as exc:
             result.items.append(BatchItem(path, "failed", error=str(exc)))
         else:
