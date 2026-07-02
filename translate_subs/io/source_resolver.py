@@ -33,8 +33,14 @@ _LANG_ALIASES = {
     "es": "es",
     "spa": "es",
     "esp": "es",
+    # `lat`/`latam`/`latino` map to Spanish on purpose: in the anime/fan-release domain this tool
+    # targets, `.lat.srt` sidecars and tracks labelled "LAT"/"Latino" mean Latin American Spanish,
+    # a very common source. This is a deliberate override of the ISO-639-2 meaning of `lat` (Latin
+    # the language), which does not occur as a video subtitle track in practice; matching a real
+    # Latino sidecar is worth far more here than reserving `lat` for a language nobody subtitles.
     "lat": "es",
     "latam": "es",
+    "latino": "es",
     "spanish": "es",
     "ja": "ja",
     "jp": "ja",

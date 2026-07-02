@@ -115,7 +115,14 @@ def analyze_subtitle(
 
     project_name, episode_name = project_episode(source, project)
 
-    signature = analysis_signature_for(provider, model)
+    # Build the runner up front so the provenance signature records the model it will actually use,
+    # not the (possibly unset) --model flag: with --model omitted a CLI provider's built-in default
+    # (e.g. claude-opus-4-8) steers the analysis, so an analysis done with that default must be
+    # re-run when the default changes. Construction is side-effect-free, so doing it before the
+    # skip-if-current check is safe. Mirrors the resolution in `translate` (see output manifest).
+    resolved_runner = runner or ai_runner_factory(provider, model=model, reasoning=reasoning)
+    effective_model = getattr(resolved_runner, "model", None)
+    signature = analysis_signature_for(provider, effective_model or model)
     if skip_if_current:
         ep_ctx_path = context_path(project_name, target, episode_name)
         if ep_ctx_path.exists():
@@ -135,7 +142,7 @@ def analyze_subtitle(
     context = analyze_episode(
         units,
         target=target,
-        runner=runner or ai_runner_factory(provider, model=model, reasoning=reasoning),
+        runner=resolved_runner,
         prior_known=prior_known(project_memory),
         max_retries=max_retries,
     )

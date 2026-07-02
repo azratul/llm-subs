@@ -92,6 +92,27 @@ def test_analyze_records_signature_and_pre_analyze_skips_when_current(tmp_path, 
         pipeline.analyze_subtitle(src, skip_if_current=True, **kw)
 
 
+def test_analyze_signature_records_effective_model(tmp_path, monkeypatch):
+    # When the runner exposes a resolved model (a CLI provider's default under an unset --model),
+    # the analysis provenance must pin it, so a later default change re-analyzes, not skips.
+    monkeypatch.setattr(config, "PROJECTS_DIR", tmp_path / "projects")
+    src = tmp_path / "ep.en.srt"
+    _save_srt(src, "Aya draws her sword.")
+
+    def runner(_p):
+        return _ANALYSIS_REPLY
+
+    runner.model = "claude-opus-4-8"  # the runner's resolved default (ClaudeCli exposes this)
+
+    result = pipeline.analyze_subtitle(
+        src, project="P", interactive=False, provider="claude", runner=runner
+    )
+    saved = EpisodeContext.model_validate_json(result.context_path.read_text("utf-8"))
+    assert saved.analysis_signature == analysis_signature_for("claude", "claude-opus-4-8")
+    # A bare --model=None signature (the old behaviour) would now be considered superseded.
+    assert saved.analysis_signature != analysis_signature_for("claude", None)
+
+
 def test_pre_analyze_reanalyzes_when_backend_changed(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "PROJECTS_DIR", tmp_path / "projects")
     src = tmp_path / "ep.en.srt"

@@ -23,8 +23,11 @@ side-effect-free construction — no network, the litellm import is lazy) and re
 model, so with `--model` omitted the provider's built-in default (e.g. `claude-opus-4-8`) is
 recorded rather than an empty string. That way a later change to a provider's default flags affected
 outputs stale, instead of two runs both recording `""` and the change going unnoticed. Providers
-with no model concept (`identity`, `file-handoff`) still record `""`. One consequence: a manifest
-written before resolved-model recording landed (model `""`) is flagged stale once against a
+with no exposed model still record `""`: `identity`/`file-handoff` (no model concept) and the CLIs
+that pick a model internally when `--model` is omitted (`codex`, `antigravity`, `opencode` — only
+`claude` exposes a default we can read). For those, a change to the CLI's internal default is not
+caught by the manifest; full reproducibility there needs an explicit `--model`. One consequence: a
+manifest written before resolved-model recording landed (model `""`) is flagged stale once against a
 now-known default on the next run — an honest "can't prove the old output used this model", not a
 data loss.
 Source changes — the common case after re-ripping or editing a subtitle — are always detected.

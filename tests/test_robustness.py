@@ -154,6 +154,24 @@ def test_normalize_lang_collapses_codes_and_names():
     assert normalize_lang(None) is None
 
 
+def test_normalize_lang_maps_latino_aliases_to_spanish():
+    # Deliberate domain override (see source_resolver `_LANG_ALIASES`): in the anime/fansub domain
+    # `lat`/`Latino` mean Latin American Spanish, not Latin the language. Freeze that contract so a
+    # future "ISO purity" cleanup can't silently regress real Latino source matching.
+    assert normalize_lang("LAT") == "es"
+    assert normalize_lang("lat") == "es"
+    assert normalize_lang("Latino") == "es"
+    assert normalize_lang("latam") == "es"
+
+
+def test_find_sidecar_selects_latino_as_spanish(tmp_path):
+    # A `.lat.srt` sidecar (common Latino fan naming) resolves as Spanish when `es` is requested.
+    (tmp_path / "movie.mkv").write_bytes(b"")
+    (tmp_path / "movie.lat.srt").write_text("x")
+    found = _find_sidecar(tmp_path / "movie.mkv", "es")
+    assert found is not None and found.name == "movie.lat.srt"
+
+
 def test_select_track_exact_match_not_substring():
     # "en" must not accidentally match a label that merely contains those letters.
     tracks = [_track(0, "Brazilian"), _track(1, "eng")]
@@ -336,6 +354,52 @@ def test_merge_alias_case_insensitive_removal():
     )
     assert merge_alias(mem2, "Alice", "alice") is False
     assert len(mem2.memory.characters) == 1
+
+
+def test_detect_character_aliases_needs_two_characters():
+    from translate_subs.memory.compact import detect_character_aliases
+    from translate_subs.memory.models import CharacterMemory
+
+    # Fewer than two characters can't have a duplicate: return early without calling the runner.
+    called = []
+
+    def runner(_prompt: str) -> str:
+        called.append(1)
+        return "{}"
+
+    assert detect_character_aliases(runner, [CharacterMemory(name="Solo")]) == []
+    assert called == []
+
+
+def test_detect_character_aliases_filters_to_known_names():
+    from translate_subs.memory.compact import detect_character_aliases
+    from translate_subs.memory.models import CharacterMemory
+
+    chars = [CharacterMemory(name="Alice Chambers"), CharacterMemory(name="Alice")]
+
+    def runner(_prompt: str) -> str:
+        # One valid pair (both names known) and one bogus pair (unknown name) that must be dropped.
+        return (
+            '{"duplicates": ['
+            '{"canonical": "Alice Chambers", "alias": "Alice", "reason": "same first name"},'
+            '{"canonical": "Alice Chambers", "alias": "Ghost", "reason": "not in memory"}]}'
+        )
+
+    matches = detect_character_aliases(runner, chars)
+    assert len(matches) == 1
+    assert matches[0].canonical == "Alice Chambers" and matches[0].alias == "Alice"
+
+
+def test_detect_character_aliases_wraps_malformed_reply():
+    from translate_subs.ai.provider import ProviderError
+    from translate_subs.memory.compact import detect_character_aliases
+    from translate_subs.memory.models import CharacterMemory
+
+    chars = [CharacterMemory(name="A"), CharacterMemory(name="B")]
+
+    # `duplicates` is not a list -> a retryable ProviderError, not a raw TypeError.
+    with pytest.raises(ProviderError, match="valid JSON"):
+        detect_character_aliases(lambda _p: '{"duplicates": "nope"}', chars)
 
 
 def test_translate_rejects_path_like_target(tmp_path, monkeypatch):

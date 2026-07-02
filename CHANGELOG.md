@@ -26,6 +26,10 @@ All notable changes to this project are documented here. The format follows
   affected outputs stale. `identity`/`file-handoff` (no model) still record `""`. A manifest written
   before this change (empty model) is flagged stale once against the now-known default — an honest
   "can't prove the old output used this model", never a data loss.
+- The same resolved-model provenance now applies to **analysis** (`analyze` / `batch --pre-analyze`):
+  the analysis signature records the model the runner actually used, so an analysis done with a
+  Claude default is re-run when that default changes, instead of being trusted on a matching source
+  fingerprint alone.
 
 ### Changed
 - `batch` now **isolates per-episode content failures** instead of aborting the whole season on any
