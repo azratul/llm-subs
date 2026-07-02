@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import shutil
 from pathlib import Path
 
@@ -11,6 +12,11 @@ from rich.table import Table
 from translate_subs import config
 from translate_subs.diagnostics import run_diagnostics
 from translate_subs.io.media_probe import probe_subtitle_tracks
+
+
+def _emit_json(payload: object) -> None:
+    """Print a machine-readable JSON document to stdout (no rich styling)."""
+    typer.echo(json.dumps(payload, ensure_ascii=False, indent=2))
 
 
 def _runtime():
@@ -72,10 +78,24 @@ def doctor(
         "--model",
         help="With --provider ollama, also verify this model is installed on the server.",
     ),
+    json_out: bool = typer.Option(False, "--json", help="Emit results as JSON instead of a table."),
 ):
     """Check the environment: media tools, writable data/cache dirs, optional provider."""
     runtime = _runtime()
     checks = run_diagnostics(provider, model)
+    failed = any(check.status == "fail" for check in checks)
+    if json_out:
+        _emit_json(
+            {
+                "ok": not failed,
+                "checks": [
+                    {"name": c.name, "status": c.status, "detail": c.detail} for c in checks
+                ],
+            }
+        )
+        if failed:
+            raise typer.Exit(code=1)
+        return
     table = Table(title="llm-subs doctor")
     for col in ("check", "status", "detail"):
         table.add_column(col)
@@ -83,7 +103,7 @@ def doctor(
     for check in checks:
         table.add_row(check.name, marks[check.status], check.detail)
     runtime.console.print(table)
-    if any(check.status == "fail" for check in checks):
+    if failed:
         raise typer.Exit(code=1)
 
 
@@ -126,14 +146,26 @@ def purge_cache(
 
 def validate(
     subtitle: Path = typer.Argument(..., help="Subtitle file to validate."),
+    json_out: bool = typer.Option(False, "--json", help="Emit the result as JSON."),
 ):
     """Structurally validate a subtitle file (parseable, timings, no leftover markup)."""
     runtime = _runtime()
     try:
         result = runtime.validate_subtitle(subtitle)
     except runtime._EXPECTED_ERRORS as exc:
-        runtime.console.print(f"[red]Error:[/red] {exc}")
+        if json_out:
+            _emit_json({"ok": False, "warnings": [], "errors": [str(exc)]})
+        else:
+            runtime.console.print(f"[red]Error:[/red] {exc}")
         raise typer.Exit(code=1)
+
+    if json_out:
+        _emit_json(
+            {"ok": result.ok, "warnings": list(result.warnings), "errors": list(result.errors)}
+        )
+        if not result.ok:
+            raise typer.Exit(code=1)
+        return
 
     for warning in result.warnings:
         runtime.console.print(f"[yellow]warning:[/yellow] {warning}")

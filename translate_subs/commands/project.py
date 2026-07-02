@@ -277,6 +277,7 @@ def compact_memory_command(
 def project_status_command(
     project: str = typer.Argument(..., help="Project/series name."),
     target: str = typer.Option("es-latam", help="Target language/variant whose state to show."),
+    json_out: bool = typer.Option(False, "--json", help="Emit the status as JSON."),
 ):
     """Show a project's stored state for a target: memory, analyzed episodes, checkpoints, outputs.
 
@@ -287,8 +288,41 @@ def project_status_command(
     try:
         result = runtime.project_status(project, target)
     except runtime._EXPECTED_ERRORS as exc:
-        runtime.console.print(f"[red]Error:[/red] {exc}")
+        if json_out:
+            import json
+
+            typer.echo(json.dumps({"error": str(exc)}, ensure_ascii=False, indent=2))
+        else:
+            runtime.console.print(f"[red]Error:[/red] {exc}")
         raise typer.Exit(code=1)
+
+    if json_out:
+        import json
+
+        typer.echo(
+            json.dumps(
+                {
+                    "project": project,
+                    "project_dir": str(result.project_dir),
+                    "target": result.target,
+                    "glossary_terms": result.glossary_terms,
+                    "characters": result.characters,
+                    "conflicts": result.conflicts,
+                    "episodes": [
+                        {
+                            "name": ep.name,
+                            "analyzed": ep.analyzed,
+                            "has_checkpoint_file": ep.has_checkpoint_file,
+                            "outputs": ep.outputs,
+                        }
+                        for ep in result.episodes
+                    ],
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return
 
     analyzed = sum(1 for ep in result.episodes if ep.analyzed)
     with_ckpt = sum(1 for ep in result.episodes if ep.has_checkpoint_file)

@@ -13,6 +13,19 @@ All notable changes to this project are documented here. The format follows
   can't check), and which output paths are tracked (read from each manifest, so legacy/corrupt
   manifests are ignored). No LLM call and no source access; output staleness is not recomputed here
   (run `batch` for that).
+- `--json` on `doctor`, `validate`, `batch` and `project-status` for machine-readable output
+  (scripting/automation), emitted on stdout with the same exit codes as the human view.
+- The output manifest now records the **llm-subs version** and a **content hash of the output
+  file**. On a later run `translate`/`batch` detect that an output was **edited by hand** since it
+  was generated (its hash no longer matches) and refuse to overwrite it without `--force`; `batch`
+  reports such an episode as `modified`. Protects manual corrections from being silently clobbered.
+- CI enforces a branch-coverage floor (`--cov-branch --cov-fail-under=85`) as a regression net.
+- The output manifest now records the **resolved model** the runner will actually use, not the
+  (possibly unset) `--model` flag: with `--model` omitted, a CLI provider's built-in default (e.g.
+  `claude-opus-4-8`) is stored instead of an empty string, so a later change to that default flags
+  affected outputs stale. `identity`/`file-handoff` (no model) still record `""`. A manifest written
+  before this change (empty model) is flagged stale once against the now-known default — an honest
+  "can't prove the old output used this model", never a data loss.
 
 ### Changed
 - `batch` now **isolates per-episode content failures** instead of aborting the whole season on any
@@ -31,6 +44,36 @@ All notable changes to this project are documented here. The format follows
   basename) also avoids colliding two same-named outputs and keeps the filename within the
   filesystem's length limit. Pre-existing `output.manifest.json` files are treated as legacy/absent
   (the output is skipped, never wrongly flagged stale) until its next `--force` rewrite.
+- `review --apply` now applies a **term-level fix surgically**. A glossary/proper-name/honorific
+  correction must change exactly one contiguous span **and that span must be short** (≤16 chars — a
+  term, not a phrase); if the model's suggested line also reworded surrounding text, or expanded the
+  term into a phrase (`Sword` → `Espada legendaria`), the fix is rejected and left for a human
+  instead of overwriting the whole line. The size cap also bounds the space-less CJK case, where the
+  whole line is a single token. Gender/empty-line/missing-id fixes still replace the line, as they
+  legitimately may.
+
+### Fixed
+- Corrected stale `CONTRIBUTING.md` claims that contradicted the code: the *output-manifest*
+  fingerprint **does** cover timing/style (a re-timed source is flagged stale — only the
+  *episode-context* fingerprint is content-only), and `batch` no longer aborts on every
+  `ProviderError` (content faults are per-episode). Softened the "no extra isolation needed" note.
+- Resolved a `README.md` contradiction: the "non-goals" section claimed coverage is "measured and
+  reported, not gated" while CI enforces an 85% floor. The README now describes the actual policy —
+  a **low floor as a regression net**, but deliberately no strict 90–95% gate.
+- `review --apply`/`tighten --apply` no longer make a later `translate`/`batch` wrongly report the
+  output as **hand-edited** (`modified`). Those commands legitimately rewrite the translated file,
+  but did not update its content hash in the manifest, so the next run saw a mismatch and refused to
+  overwrite without `--force`. They now re-record the manifest's `output_hash` after writing, so only
+  edits made *outside* the tool are flagged.
+- `batch --json` now emits JSON on **every** path. A run that failed before starting (e.g. the input
+  argument is not a directory) printed a Rich-formatted error to stdout, corrupting the JSON a script
+  was parsing; the error is now a `{"error": ...}` object on stdout. The antigravity weak-isolation
+  warning is likewise routed to stderr under `--json` so it can't contaminate the JSON on stdout.
+- A **corrupt/unreadable output manifest** is no longer silently treated as "up to date" and
+  skipped. When the manifest file exists but can't be parsed, `translate`/`batch` can't verify the
+  output is current, so they surface it (reported `stale`, never overwritten without `--force`)
+  instead of hiding it. A genuinely *absent* manifest (legacy/pre-feature output) is still skipped
+  as before — only an existing-but-broken one is flagged.
 
 ### Security
 - Stronger, louder guidance to prefer a local `ollama` model for untrusted material: `doctor

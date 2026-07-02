@@ -49,6 +49,7 @@ from translate_subs.workflows.models import (
     AnalyzeBatchResult,
     BatchItem,
     BatchResult,
+    ModifiedOutputError,
     OutputExistsError,
     PipelineError,
     StaleOutputError,
@@ -57,9 +58,11 @@ from translate_subs.workflows.models import (
 from translate_subs.workflows.output_manifest import (
     OutputManifest,
     describe_change,
+    file_digest,
     is_stale,
     load_manifest,
     manifest_path,
+    tool_version,
     write_manifest,
 )
 from translate_subs.workflows.support import (
@@ -171,34 +174,7 @@ def translate_subtitle(
     memory_rules = build_memory_rules(project_memory, context)
     memory_used = bool(project_memory.glossary or project_memory.memory.characters)
 
-    out_manifest = OutputManifest(
-        source_hash=output_source_digest(units),
-        target=target,
-        provider=provider,
-        model=model or "",
-        reasoning=reasoning or "",
-        memory_hash=memory_prompt_digest(memory_rules),
-        fmt=fmt,
-        output=str(out_file.resolve()),
-    )
-    out_manifest_path = manifest_path(project_name, target, episode_name, out_file)
-    if out_file.exists() and not force:
-        stored = load_manifest(out_manifest_path)
-        if stored is not None and is_stale(stored, out_manifest):
-            raise StaleOutputError(
-                f"Output is stale ({describe_change(stored, out_manifest)} changed since it was "
-                f"written): {out_file}. Use --force to retranslate."
-            )
-        raise OutputExistsError(f"Output already exists: {out_file}. Use --force to overwrite.")
-
     jobs_dir = episode_dir(project_name, target, episode_name) / "jobs"
-
-    def rules_for(lines):
-        text = " ".join(line.text for line in lines)
-        speakers = [line.speaker for line in lines]
-        return base_rules + rules_for_text(memory_rules, text, speakers)
-
-    jobs = build_jobs(units, target=target, rules_for=rules_for)
     translation_provider = provider_factory(
         provider,
         jobs_dir,
@@ -207,12 +183,58 @@ def translate_subtitle(
         max_retries=max_retries,
         timeout=timeout,
     )
+    # Record the model the runner will actually use, not the (possibly unset) --model flag: with
+    # --model omitted the runner falls back to its own default (e.g. claude-opus-4-8). Storing the
+    # resolved model lets a later run notice that default changing — otherwise both runs record an
+    # empty model and the change is invisible. Construction is side-effect-free (no network, the
+    # litellm import is lazy), so building the provider before the existence check is safe even when
+    # the run turns out to skip.
+    effective_model = getattr(getattr(translation_provider, "runner", None), "model", None)
+
+    out_manifest = OutputManifest(
+        source_hash=output_source_digest(units),
+        target=target,
+        provider=provider,
+        model=effective_model or model or "",
+        reasoning=reasoning or "",
+        memory_hash=memory_prompt_digest(memory_rules),
+        fmt=fmt,
+        output=str(out_file.resolve()),
+    )
+    out_manifest_path = manifest_path(project_name, target, episode_name, out_file)
+    if out_file.exists() and not force:
+        stored = load_manifest(out_manifest_path)
+        if stored is None and out_manifest_path.exists():
+            # The manifest file exists but is unreadable (corrupt/tampered). We can't confirm the
+            # output is current, so surface it rather than silently skipping it as up to date.
+            raise StaleOutputError(
+                f"Output manifest is unreadable ({out_manifest_path}); cannot verify "
+                f"{out_file} is up to date. Use --force to regenerate it."
+            )
+        if stored is not None:
+            # Protect hand-edits first: if the file changed since we wrote it, never overwrite it
+            # on our own, even if the source also changed.
+            if stored.output_hash and file_digest(out_file) != stored.output_hash:
+                raise ModifiedOutputError(
+                    f"Output was edited since it was generated: {out_file}. "
+                    "Use --force to overwrite your changes."
+                )
+            if is_stale(stored, out_manifest):
+                raise StaleOutputError(
+                    f"Output is stale ({describe_change(stored, out_manifest)} changed since it "
+                    f"was written): {out_file}. Use --force to retranslate."
+                )
+        raise OutputExistsError(f"Output already exists: {out_file}. Use --force to overwrite.")
+
+    def rules_for(lines):
+        text = " ".join(line.text for line in lines)
+        speakers = [line.speaker for line in lines]
+        return base_rules + rules_for_text(memory_rules, text, speakers)
+
+    jobs = build_jobs(units, target=target, rules_for=rules_for)
     if provider in CLI_PROVIDERS:
-        # Key the checkpoint on the model the runner will actually use, not the (possibly unset)
-        # --model flag: when --model is omitted the runner falls back to its own default (e.g.
-        # claude-opus-4-8), and a later change to that default must not silently reuse blocks
-        # translated by the old one.
-        effective_model = getattr(getattr(translation_provider, "runner", None), "model", None)
+        # Key the checkpoint on the model the runner will actually use (see effective_model above),
+        # so a later change to a provider's built-in default doesn't silently reuse old blocks.
         signature = f"{provider}|{effective_model or model or ''}|{reasoning or ''}"
         checkpoint_file = jobs_dir.parent / CHECKPOINT_FILE
         checkpoint = (
@@ -254,7 +276,10 @@ def translate_subtitle(
     validation = atomic_save(subs, out_file, fmt=fmt, validate=validate_rendered)
     if validation is None:  # atomic_save returns a result whenever a validator is passed
         raise PipelineError("Internal error: the rendered output was not validated.")
-    # Record what produced this output so a later `batch` run can tell up-to-date from stale.
+    # Record what produced this output (for staleness) plus the tool version and the file's own
+    # hash (for the "edited since generated" check on a later run).
+    out_manifest.tool_version = tool_version()
+    out_manifest.output_hash = file_digest(out_file)
     write_manifest(out_manifest_path, out_manifest)
     return TranslateResult(
         source=source,
@@ -369,6 +394,9 @@ def batch_translate(
         except StaleOutputError as exc:
             # Source/model/prompt changed since this output was written: warn, never overwrite.
             result.items.append(BatchItem(path, "stale", error=str(exc)))
+        except ModifiedOutputError as exc:
+            # The output was hand-edited since we wrote it: warn, never overwrite without --force.
+            result.items.append(BatchItem(path, "modified", error=str(exc)))
         except ProviderError as exc:
             # A content/protocol fault (unparseable reply, wrong ids) is local to this episode:
             # record it and move on. Auth/config/quota/service (or an unclassified error) is

@@ -56,7 +56,7 @@ jobs:
         run: uv run mypy translate_subs/
 
       - name: Tests (with coverage report)
-        run: uv run pytest -q --cov=translate_subs --cov-report=term-missing
+        run: uv run pytest -q --cov=translate_subs --cov-branch --cov-report=term-missing --cov-fail-under=85
 
   audit:
     runs-on: ubuntu-latest

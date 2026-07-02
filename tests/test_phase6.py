@@ -310,6 +310,76 @@ def test_same_basename_different_dirs_get_independent_manifests(tmp_path, monkey
         pipeline.translate_subtitle(source, output=b, **kw)  # B still stale, not masked by A
 
 
+def test_manifest_records_version_and_output_hash(tmp_path, monkeypatch):
+    from translate_subs.workflows.output_manifest import OutputManifest
+
+    monkeypatch.setattr(config, "PROJECTS_DIR", tmp_path / "projects")
+    source = tmp_path / "ep.en.srt"
+    _srt_with(source, "Hello.")
+    pipeline.translate_subtitle(
+        source, provider="identity", interactive=False, fmt="srt", project="P"
+    )
+    manifest = next((tmp_path / "projects").rglob("*.manifest.json"))
+    saved = OutputManifest.model_validate_json(manifest.read_text("utf-8"))
+    assert saved.output_hash  # the produced file's content hash was recorded
+    assert hasattr(saved, "tool_version")  # version recorded (may be "" from an uninstalled tree)
+
+
+def test_hand_edited_output_is_protected(tmp_path, monkeypatch):
+    from translate_subs.workflows.models import ModifiedOutputError, OutputExistsError
+
+    monkeypatch.setattr(config, "PROJECTS_DIR", tmp_path / "projects")
+    source = tmp_path / "ep.en.srt"
+    _srt_with(source, "Hello.")
+    kw = dict(provider="identity", interactive=False, fmt="srt", project="P")
+    result = pipeline.translate_subtitle(source, **kw)
+
+    with pytest.raises(OutputExistsError):  # unchanged output -> plain skip
+        pipeline.translate_subtitle(source, **kw)
+
+    # Hand-edit the output; a re-run must refuse to clobber it.
+    edited = result.output_path.read_text("utf-8") + "\n\n99\n00:00:09,000 --> 00:00:10,000\nnote\n"
+    result.output_path.write_text(edited, "utf-8")
+    with pytest.raises(ModifiedOutputError):
+        pipeline.translate_subtitle(source, **kw)
+
+    # --force overwrites and re-records the hash, so a following run skips again.
+    pipeline.translate_subtitle(source, force=True, **kw)
+    with pytest.raises(OutputExistsError):
+        pipeline.translate_subtitle(source, **kw)
+
+
+def test_corrupt_manifest_is_surfaced_not_skipped(tmp_path, monkeypatch):
+    # A manifest that exists but is unreadable must not be silently treated as "up to date" (skip);
+    # we can't verify freshness, so it is surfaced as stale rather than hidden.
+    from translate_subs.workflows.models import StaleOutputError
+
+    monkeypatch.setattr(config, "PROJECTS_DIR", tmp_path / "projects")
+    source = tmp_path / "ep.en.srt"
+    _srt_with(source, "Hello.")
+    kw = dict(provider="identity", interactive=False, fmt="srt", project="P")
+    pipeline.translate_subtitle(source, **kw)
+
+    manifest = next((tmp_path / "projects").rglob("*.manifest.json"))
+    manifest.write_text("{ this is not valid json", "utf-8")
+    with pytest.raises(StaleOutputError, match="unreadable"):
+        pipeline.translate_subtitle(source, **kw)
+
+
+def test_batch_records_modified_status(tmp_path):
+    from translate_subs.workflows.models import ModifiedOutputError
+    from translate_subs.workflows.translation import batch_translate
+
+    def discover(*_a, **_k):
+        return [tmp_path / "a.mkv"]
+
+    def modified(_path, **_k):
+        raise ModifiedOutputError("edited by hand")
+
+    res = batch_translate(tmp_path, discover_inputs_fn=discover, translate_fn=modified)
+    assert res.n_modified == 1 and res.n_failed == 0 and res.n_translated == 0
+
+
 def test_project_status_ignores_legacy_and_corrupt_manifests(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "PROJECTS_DIR", tmp_path / "projects")
     source = tmp_path / "ep.en.srt"

@@ -104,17 +104,26 @@ general "this looks unsafe" — the reasoning is what a PR needs to overturn.
 - **Every agent CLI runs from an empty throwaway `cwd` with its own tool/sandbox switches.**
   `claude` denies all tools + `--strict-mcp-config`, `codex` is `--sandbox read-only`,
   `antigravity` gets `--sandbox` (terminal-only — the weakest, hence discouraged for untrusted
-  input). No extra container is required beyond these.
+  input). These built-in switches are the containment; no extra container is used. That is a
+  deliberate trade-off, not a claim of perfect isolation — `antigravity` in particular leans on the
+  throwaway cwd alone, so prefer a local `ollama` model for material from an untrusted source.
 - **Internal state is written owner-only (0600); the final subtitle is widened to the umask.**
   State can carry subtitle text and stays private; the output must be readable by a media server
   running as another user (Jellyfin/Plex). The two modes are intentionally different.
 - **Series memory is segmented by the *full* target** (`es-latam` ≠ `es-es`), so variants of one
   language never share glossary/characters/conflicts.
-- **Per-episode batch failures are recorded and skipped; `ProviderError` aborts the run.** A parse
-  error is per-episode; exhausted quota / broken auth is systemic, so it stops everything.
-- **The stale-output fingerprint hashes translation-relevant content (id/speaker/text), not timing
-  or styles.** A timing-only source edit does not change the translation, so it deliberately does
-  not flag the output as stale. `--strict-lang` stays translation-only (not on `analyze`/`review`).
+- **Batch isolates per-episode failures; only systemic ones abort.** A parse error, or a
+  content/protocol `ProviderError` (unparseable reply / wrong ids for *that* episode), is recorded
+  as `failed` and the run continues. A systemic `ProviderError` — auth/config, quota/rate-limit, a
+  service outage, or an unclassified (`unknown`) one — aborts the run, since retrying every
+  remaining episode would just repeat it (`ProviderError.category`, propagated through
+  `retry_provider_call`). `--strict-lang` stays translation-only (not on `analyze`/`review`).
+- **Two fingerprints, two scopes — don't conflate them.** The *episode-context* fingerprint
+  (`source_digest`) hashes only translation-relevant content (id/speaker/text): a timing-only edit
+  doesn't change the translation, so it deliberately does **not** flag the context stale. The
+  *output-manifest* fingerprint (`output_source_digest`) additionally covers timing, style and the
+  leading override block, so a re-timed or re-styled source **is** flagged as a stale output — the
+  file is desynchronised even though the translation is unchanged.
 - **`.ass` output preserves non-translatable events verbatim** (drawings, comments, empty cues);
   only `.srt` prunes them, because SRT has no positioning.
 
@@ -122,11 +131,11 @@ general "this looks unsafe" — the reasoning is what a PR needs to overturn.
 
 Real gaps we know about. Don't silently close them, and don't re-file them as new:
 
-- **`review --apply`/`tighten --apply` replace the whole line**, not just the changed term, and
-  `tighten` checks only that a compaction fits the character budget, not that meaning was preserved.
-  This is no longer *silent*: by default both preview the diff and ask before writing (skip with
-  `--yes`), so review the diff before confirming. Diff-limiting a replacement to just the changed
-  span is still unimplemented.
+- **`tighten --apply` replaces the whole line** and checks only that a compaction fits the character
+  budget, not that meaning was preserved. `review --apply` now guards term fixes (glossary/name/
+  honorific): a suggestion that changes more than one contiguous span is rejected, not applied.
+  Neither is *silent*: by default both preview the diff and ask before writing (skip with `--yes`),
+  so review the diff before confirming.
 - **`flatten_overlaps` has a quadratic worst case** on pathologically dense `.srt` files; ordinary
   subtitles are unaffected.
 - **The `litellm` extra is only smoke-tested in CI.** The main test job runs without extras; a

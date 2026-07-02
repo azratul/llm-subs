@@ -70,17 +70,19 @@ app = typer.Typer(
     "output is .ass by default, .srt with --format srt.",
 )
 console = Console()
+err_console = Console(stderr=True)
 
 
-def _warn_weak_backend(*providers: str) -> None:
+def _warn_weak_backend(*providers: str, err: bool = False) -> None:
     """Warn when antigravity is about to process untrusted subtitle text through the LLM.
 
     Call from every command that actually runs the LLM, with the provider(s) that will run (e.g.
     both the translate and pre-analyze providers for `batch`), so the weakest-isolated backend is
-    flagged wherever it is used — not only in `translate`/`batch`.
+    flagged wherever it is used — not only in `translate`/`batch`. Pass `err=True` to route the
+    warning to stderr (e.g. under `--json`, so it doesn't corrupt the JSON on stdout).
     """
     if "antigravity" in providers:
-        console.print(
+        (err_console if err else console).print(
             "[yellow]Warning:[/yellow] 'antigravity' is the weakest-isolated backend (its "
             "--sandbox restricts only the terminal, not tools). Prefer a local 'ollama' model "
             "for material from an untrusted source."

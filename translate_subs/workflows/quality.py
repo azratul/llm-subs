@@ -22,13 +22,14 @@ from translate_subs.readability.report import render_markdown as render_readabil
 from translate_subs.review.checks import DEFAULT_MAX_CHARS, run_deterministic_checks
 from translate_subs.review.models import Finding, ReviewReport
 from translate_subs.review.report import render_markdown
-from translate_subs.review.reviewer import review_lines
+from translate_subs.review.reviewer import TERM_FIX_KINDS, is_single_span_edit, review_lines
 from translate_subs.review.structure import ALIGN_TOLERANCE_MS, pair_lines
 from translate_subs.subs import document
 from translate_subs.subs.extractor import extract_units, is_translatable
 from translate_subs.subs.reinserter import replace_visible_text
 from translate_subs.subs.validator import ValidationResult, validate_file, validate_output
 from translate_subs.workflows.models import PipelineError, ReviewResult, TightenResult
+from translate_subs.workflows.output_manifest import refresh_output_manifest
 from translate_subs.workflows.support import (
     atomic_save,
     context_path,
@@ -192,6 +193,13 @@ def review_translation(
                 # applying a fix derived from stale context could corrupt a line edited by hand.
                 if fix.current is not None and actual_text != fix.current:
                     continue
+                # A term-level fix (glossary/name/honorific) must change one contiguous span, not
+                # reword the line. If the suggestion also rewrote surrounding text, reject it and
+                # leave the line for a human instead of overwriting it wholesale.
+                if fix.kind in TERM_FIX_KINDS and not is_single_span_edit(
+                    actual_text, fix.suggested
+                ):
+                    continue
                 planned_fixes.append((fix.id or "", actual_text, fix.suggested))
                 seen_ids.add(fix.id or "")
         if apply and planned_fixes and (confirm is None or confirm(planned_fixes)):
@@ -205,6 +213,8 @@ def review_translation(
                     translated_path,
                     validate=lambda path: validate_output(path, units),
                 )
+                # Re-bless the output so this legitimate edit isn't later flagged as a hand-edit.
+                refresh_output_manifest(project_name, target, translated_path)
 
     # Fingerprint and write the report *after* applying safe fixes, so the manifest matches the
     # file on disk: with --apply, target_subs (and the saved file) reflect the fixes, so computing
@@ -346,6 +356,9 @@ def tighten_subtitle(
     key_origin = Path(source) if source is not None else translated_path
     project_name = project or default_project(key_origin)
     episode_name = episode_key(key_origin)
+    if n_applied:
+        # Re-bless the output so this legitimate compaction isn't later flagged as a hand-edit.
+        refresh_output_manifest(project_name, target, translated_path)
     out_path = readability_path(project_name, target, episode_name)
     content_fingerprint = hashlib.sha256(
         "\n".join(f"{e.start},{e.end},{e.plaintext}" for e in subs.events).encode("utf-8")

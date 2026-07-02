@@ -375,11 +375,16 @@ auth/config, quota/rate-limit, or a service outage — aborts the whole run, sin
 remaining episode would just repeat it. If
 an existing output is **stale** — its source, provider/model or prompt changed since it was written
 — it is reported as such (a warning, not an error) rather than skipped, so you know to rerun it with
-`--force`; the existing file is never overwritten on its own. A summary table reports
-translated/skipped/stale/failed, and the command exits non-zero if any episode failed (or, with
-`--fail-on-untranslated`, if any line was left untranslated; or, with `--fail-on-stale`, if any
-output was flagged stale). Because each episode still checkpoints
-per block, interrupting a season and rerunning resumes mid-episode.
+`--force`; the existing file is never overwritten on its own. An output you **edited by hand** since
+it was generated is reported **modified** and likewise never overwritten without `--force`, so your
+manual corrections are safe (edits made by the tool's own `review --apply`/`tighten --apply` don't
+count — those re-bless the manifest, so only outside edits are flagged). A summary table reports
+translated/skipped/stale/modified/failed, and
+the command exits non-zero if any episode failed (or, with `--fail-on-untranslated`, if any line was
+left untranslated; or, with `--fail-on-stale`, if any output was flagged stale). Pass `--json` for
+a machine-readable summary instead of the table (also on `doctor`, `validate` and `project-status`).
+Because each episode still checkpoints per block, interrupting a season and rerunning resumes
+mid-episode.
 
 With `--out-dir`, each input's sub-directory relative to the batch root is mirrored under it
 (`Season 1/Episode 01.mkv` → `<out-dir>/Season 1/Episode 01.es-latam.ass`), so two same-named
@@ -637,10 +642,12 @@ specific items follow.
   deterministic contract (stable IDs, ID/timestamp validation, glossary/gender consistency
   checks) and by human reading. Prompt changes are reviewed by their effect on real episodes, not
   by an automated score.
-- **A hard coverage threshold in CI.** Coverage is measured and reported, not gated. A strict 90–95%
-  gate tends to incentivise filler tests that just exercise framework glue code — testing whether
-  Typer prints the right error when a file is missing, for instance. Effort goes to tests that
-  exercise real deterministic behaviour (extraction, reinsertion) instead of chasing a number.
+- **A high coverage gate in CI.** CI enforces a **low floor** (`--cov-fail-under=85`) purely as a
+  regression net — a sharp drop means a whole area lost its tests, and that should fail the build.
+  But there is deliberately **no** strict 90–95% gate: chasing that number tends to incentivise
+  filler tests that just exercise framework glue code (whether Typer prints the right error when a
+  file is missing, for instance). Effort goes to tests that exercise real deterministic behaviour
+  (extraction, reinsertion) instead of chasing coverage.
 - **Fuzzing the parser against malformed ASS/SRT.** Parsing is delegated to `pysubs2`, so the
   project does not fuzz it for robustness to broken input. It *does* property-test its own
   extraction/reinsertion invariants (`tests/test_properties.py`) against generated well-formed

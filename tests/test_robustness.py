@@ -1367,6 +1367,74 @@ def test_batch_analyze_isolates_content_error_but_aborts_systemic(tmp_path):
         batch_analyze(tmp_path, discover_inputs_fn=discover, analyze_fn=auth_fail)
 
 
+def test_cli_json_flags(tmp_path, monkeypatch):
+    import json as _json
+
+    from translate_subs.commands import system as system_cmd
+    from translate_subs.diagnostics import Check
+
+    monkeypatch.setattr(config, "PROJECTS_DIR", tmp_path / "projects")
+
+    # doctor --json (mocked checks for determinism)
+    monkeypatch.setattr(
+        system_cmd, "run_diagnostics", lambda provider=None, model=None: [Check("media", "ok", "d")]
+    )
+    res = CliRunner().invoke(app, ["doctor", "--json"])
+    assert res.exit_code == 0
+    payload = _json.loads(res.stdout)
+    assert payload["ok"] is True and payload["checks"][0]["name"] == "media"
+
+    subs = pysubs2.SSAFile()
+    subs.events.append(pysubs2.SSAEvent(start=0, end=1000, text="Hi"))
+
+    # validate --json
+    ok_file = tmp_path / "ok.srt"
+    subs.save(str(ok_file), format_="srt")
+    res = CliRunner().invoke(app, ["validate", str(ok_file), "--json"])
+    assert res.exit_code == 0 and _json.loads(res.stdout)["ok"] is True
+
+    # project-status --json
+    src = tmp_path / "ep.en.srt"
+    subs.save(str(src), format_="srt")
+    pipeline.translate_subtitle(src, provider="identity", interactive=False, fmt="srt", project="P")
+    res = CliRunner().invoke(app, ["project-status", "P", "--json"])
+    payload = _json.loads(res.stdout)
+    assert payload["project"] == "P" and payload["episodes"][0]["outputs"]
+
+    # batch --json
+    season = tmp_path / "season"
+    season.mkdir()
+    subs.save(str(season / "e1.en.srt"), format_="srt")
+    res = CliRunner().invoke(
+        app,
+        [
+            "batch",
+            str(season),
+            "--glob",
+            "*.srt",
+            "--provider",
+            "identity",
+            "--project",
+            "Q",
+            "--json",
+        ],
+    )
+    payload = _json.loads(res.stdout)
+    assert payload["summary"]["translated"] == 1 and payload["items"][0]["status"] == "translated"
+
+
+def test_batch_json_emits_json_on_error(tmp_path):
+    import json as _json
+
+    # A top-level failure (here: not a directory) must still be valid JSON on stdout, not a Rich
+    # error line that breaks a parsing consumer.
+    res = CliRunner().invoke(
+        app, ["batch", str(tmp_path / "does-not-exist"), "--json", "--provider", "identity"]
+    )
+    assert res.exit_code == 1
+    assert "error" in _json.loads(res.stdout)
+
+
 def test_project_status_cli_smoke(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "PROJECTS_DIR", tmp_path / "projects")
     src = tmp_path / "ep.en.srt"
@@ -1757,6 +1825,30 @@ def test_checkpoint_signature_includes_effective_model(tmp_path, monkeypatch):
     )
     signature = json.loads(cp.read_text())["signature"]
     assert signature == "claude|claude-opus-4-8|"
+
+
+def test_manifest_records_effective_model(tmp_path, monkeypatch):
+    # Companion to the checkpoint test: the output manifest must also record the model the runner
+    # actually used, not the (unset) --model flag, so a later default-model change is detected.
+    import types
+
+    monkeypatch.setattr(config, "PROJECTS_DIR", tmp_path / "projects")
+    source = tmp_path / "ep.en.srt"
+    _one_line_srt(source)
+
+    prov = _FlakyProvider()
+    prov.runner = types.SimpleNamespace(model="claude-opus-4-8")
+    monkeypatch.setattr(pipeline, "make_provider", lambda *a, **k: prov)
+
+    pipeline.translate_subtitle(
+        source, provider="claude", interactive=False, project="P", fmt="srt"
+    )
+
+    from translate_subs.workflows.output_manifest import OutputManifest
+
+    manifest = next((tmp_path / "projects").rglob("*.manifest.json"))
+    saved = OutputManifest.model_validate_json(manifest.read_text("utf-8"))
+    assert saved.model == "claude-opus-4-8"
 
 
 # --- parallel translate_with_checkpoint (ollama / litellm path) ----------------------

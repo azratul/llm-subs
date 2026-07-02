@@ -8,7 +8,9 @@ auto-applied is decided here, never by trusting the model blindly.
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Callable
+from difflib import SequenceMatcher
 from functools import partial
 
 from translate_subs.ai.claude_cli import extract_json
@@ -19,6 +21,40 @@ Runner = Callable[[str], str]
 
 # Kinds eligible for automatic correction. Everything else is left for a human.
 SAFE_KINDS = {"glossary", "proper_name", "honorific", "empty_line", "missing_id", "gender"}
+
+# Term-substitution fixes: they should change one term, not rewrite the line, so they are held to
+# the single-span guard below; the rest (gender/empty_line/missing_id) may touch the whole line.
+TERM_FIX_KINDS = {"glossary", "proper_name", "honorific"}
+
+_WORD_OR_SPACE = re.compile(r"\S+|\s+")
+# A glossary term / proper name is short; a single changed run longer than this is a reword (the
+# model expanded the term or rewrote a phrase), not a term swap, so it is rejected. This also bounds
+# the space-less CJK case, where the whole line is one token: a small change applies, a large
+# rewrite is rejected. Distinguishing a small CJK term-swap from a small CJK reword is not possible
+# without word segmentation — an accepted residual weakness, mitigated by the `apply_safe_policy`
+# guard that the suggestion must still carry the known glossary rendering / character name.
+_MAX_SPAN_CHARS = 16
+
+
+def is_single_span_edit(current: str, suggested: str) -> bool:
+    """True when `suggested` is a term-swap of `current`: exactly one short, contiguous change.
+
+    A glossary/name/honorific correction should replace one term, not reword the line. Applying the
+    whole suggested line would trust the model not to have rewritten the surrounding text; this
+    guard rejects a suggestion (leaving it for a human) unless exactly one contiguous run of
+    tokens differs and it is short (a term, not a phrase). Because the caller only applies fixes
+    whose `current` still matches the on-disk line, replacing the whole line then equals replacing
+    just that run.
+    """
+    a = _WORD_OR_SPACE.findall(current)
+    b = _WORD_OR_SPACE.findall(suggested)
+    changed = [
+        op for op in SequenceMatcher(a=a, b=b, autojunk=False).get_opcodes() if op[0] != "equal"
+    ]
+    if len(changed) != 1:
+        return False
+    _, i1, i2, j1, j2 = changed[0]
+    return max(len("".join(a[i1:i2])), len("".join(b[j1:j2]))) <= _MAX_SPAN_CHARS
 
 
 def build_review_prompt(

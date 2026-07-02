@@ -36,6 +36,15 @@ class StaleOutputError(PipelineError):
     """
 
 
+class ModifiedOutputError(PipelineError):
+    """Raised when an output exists but its content changed since llm-subs wrote it (its hash no
+    longer matches the manifest's `output_hash`).
+
+    A distinct type so `batch` records the episode as *modified* — a warning that the file was
+    hand-edited — and never overwrites it without `--force`, protecting manual corrections.
+    """
+
+
 class AnalysisCurrentError(Exception):
     """Raised by `analyze_subtitle` when the context is already current (source unchanged).
 
@@ -60,7 +69,7 @@ class TranslateResult:
 @dataclass
 class BatchItem:
     input_path: Path
-    status: Literal["translated", "skipped", "stale", "failed"]
+    status: Literal["translated", "skipped", "stale", "modified", "failed"]
     output_path: Path | None = None
     error: str | None = None
     untranslated_ids: list[str] = field(default_factory=list)
@@ -81,6 +90,10 @@ class BatchResult:
     @property
     def n_stale(self) -> int:
         return sum(1 for item in self.items if item.status == "stale")
+
+    @property
+    def n_modified(self) -> int:
+        return sum(1 for item in self.items if item.status == "modified")
 
     @property
     def n_failed(self) -> int:

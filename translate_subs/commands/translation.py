@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import time
 from pathlib import Path
 
@@ -296,6 +297,9 @@ def batch(
         "--fail-on-stale",
         help="Exit non-zero if any output was flagged stale (source/model/prompt/memory changed).",
     ),
+    json_out: bool = typer.Option(
+        False, "--json", help="Emit the per-episode results and summary as JSON instead of a table."
+    ),
     no_resume: bool = typer.Option(
         False, "--no-resume", help="Ignore saved checkpoints and re-translate every block."
     ),
@@ -340,10 +344,12 @@ def batch(
         providers_used = {provider}
         if pre_analyze:
             providers_used.add(overrides.get("analyze_provider") or provider)
-        runtime._warn_weak_backend(*providers_used)
+        # Under --json the warning goes to stderr so stdout stays valid JSON, but is never dropped.
+        runtime._warn_weak_backend(*providers_used, err=json_out)
 
         if pre_analyze:
-            runtime.console.print("[bold]Phase 1/2: Analyzing episodes…[/bold]")
+            if not json_out:
+                runtime.console.print("[bold]Phase 1/2: Analyzing episodes…[/bold]")
             on_analyze, analyze_elapsed = _make_episode_callback(runtime.console, label="Analyze")
             analyze_provider = overrides.get("analyze_provider") or provider
             analyze_model = overrides.get("analyze_model") or model
@@ -352,7 +358,7 @@ def batch(
                 directory,
                 globs=tuple(glob),
                 recursive=recursive,
-                on_episode=on_analyze,
+                on_episode=None if json_out else on_analyze,
                 target=target,
                 provider=analyze_provider,
                 model=analyze_model,
@@ -364,32 +370,33 @@ def batch(
                 on_conflict="flag",
                 skip_if_current=True,
             )
-            if analyze_result.items:
-                atbl = Table(title=f"{directory} — analysis")
-                for col in ("episode", "status", "detail"):
-                    atbl.add_column(col)
-                amarks = {
-                    "analyzed": "[green]analyzed[/green]",
-                    "skipped": "[yellow]skipped[/yellow]",
-                    "failed": "[red]failed[/red]",
-                }
-                for item in analyze_result.items:
-                    detail = item.error or "" if item.status == "failed" else ""
-                    atbl.add_row(item.input_path.name, amarks[item.status], detail)
-                runtime.console.print(atbl)
-            runtime.console.print(
-                f"Analyzed [green]{analyze_result.n_analyzed}[/green], "
-                f"skipped [yellow]{analyze_result.n_skipped}[/yellow], "
-                f"failed [red]{analyze_result.n_failed}[/red].  "
-                f"Total: {_fmt_duration(analyze_elapsed())}"
-            )
-            runtime.console.print("[bold]Phase 2/2: Translating episodes…[/bold]")
+            if not json_out:
+                if analyze_result.items:
+                    atbl = Table(title=f"{directory} — analysis")
+                    for col in ("episode", "status", "detail"):
+                        atbl.add_column(col)
+                    amarks = {
+                        "analyzed": "[green]analyzed[/green]",
+                        "skipped": "[yellow]skipped[/yellow]",
+                        "failed": "[red]failed[/red]",
+                    }
+                    for item in analyze_result.items:
+                        detail = item.error or "" if item.status == "failed" else ""
+                        atbl.add_row(item.input_path.name, amarks[item.status], detail)
+                    runtime.console.print(atbl)
+                runtime.console.print(
+                    f"Analyzed [green]{analyze_result.n_analyzed}[/green], "
+                    f"skipped [yellow]{analyze_result.n_skipped}[/yellow], "
+                    f"failed [red]{analyze_result.n_failed}[/red].  "
+                    f"Total: {_fmt_duration(analyze_elapsed())}"
+                )
+                runtime.console.print("[bold]Phase 2/2: Translating episodes…[/bold]")
 
         result = runtime.batch_translate(
             directory,
             globs=tuple(glob),
             recursive=recursive,
-            on_episode=on_episode,
+            on_episode=None if json_out else on_episode,
             target=target,
             provider=provider,
             model=model,
@@ -407,56 +414,93 @@ def batch(
             timeout=timeout,
         )
     except runtime._EXPECTED_ERRORS as exc:
-        runtime.console.print(f"[red]Error:[/red] {exc}")
+        if json_out:
+            typer.echo(json.dumps({"error": str(exc)}, ensure_ascii=False, indent=2))
+        else:
+            runtime.console.print(f"[red]Error:[/red] {exc}")
         raise typer.Exit(code=1)
 
-    if not result.items:
+    untranslated_total = sum(len(item.untranslated_ids) for item in result.items)
+
+    if json_out:
+        typer.echo(
+            json.dumps(
+                {
+                    "directory": str(directory),
+                    "summary": {
+                        "translated": result.n_translated,
+                        "skipped": result.n_skipped,
+                        "stale": result.n_stale,
+                        "modified": result.n_modified,
+                        "failed": result.n_failed,
+                        "untranslated_lines": untranslated_total,
+                    },
+                    "items": [
+                        {
+                            "input": str(item.input_path),
+                            "status": item.status,
+                            "output": str(item.output_path) if item.output_path else None,
+                            "error": item.error,
+                            "untranslated_ids": item.untranslated_ids,
+                        }
+                        for item in result.items
+                    ],
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+    elif not result.items:
         runtime.console.print("[yellow]No matching files found.[/yellow]")
         return
-
-    table = Table(title=str(directory))
-    for column in ("episode", "status", "detail"):
-        table.add_column(column)
-    marks = {
-        "translated": "[green]translated[/green]",
-        "skipped": "[yellow]skipped[/yellow]",
-        "stale": "[yellow]stale[/yellow]",
-        "failed": "[red]failed[/red]",
-    }
-    untranslated_total = 0
-    for item in result.items:
-        if item.status == "translated":
-            detail = str(item.output_path)
-            if item.untranslated_ids:
-                untranslated_total += len(item.untranslated_ids)
-                detail += f"  ([yellow]{len(item.untranslated_ids)} untranslated[/yellow])"
-        elif item.status == "skipped":
-            detail = "output exists (use --force)"
-        elif item.status == "stale":
-            detail = "source/model/prompt changed (use --force to retranslate)"
-        else:
-            detail = item.error or "error"
-        table.add_row(item.input_path.name, marks[item.status], detail)
-    runtime.console.print(table)
-    runtime.console.print(
-        f"Translated [green]{result.n_translated}[/green], "
-        f"skipped [yellow]{result.n_skipped}[/yellow], "
-        f"stale [yellow]{result.n_stale}[/yellow], "
-        f"failed [red]{result.n_failed}[/red].  "
-        f"Total: {_fmt_duration(translate_elapsed())}"
-    )
+    else:
+        table = Table(title=str(directory))
+        for column in ("episode", "status", "detail"):
+            table.add_column(column)
+        marks = {
+            "translated": "[green]translated[/green]",
+            "skipped": "[yellow]skipped[/yellow]",
+            "stale": "[yellow]stale[/yellow]",
+            "modified": "[yellow]modified[/yellow]",
+            "failed": "[red]failed[/red]",
+        }
+        for item in result.items:
+            if item.status == "translated":
+                detail = str(item.output_path)
+                if item.untranslated_ids:
+                    detail += f"  ([yellow]{len(item.untranslated_ids)} untranslated[/yellow])"
+            elif item.status == "skipped":
+                detail = "output exists (use --force)"
+            elif item.status == "stale":
+                detail = "source/model/prompt changed (use --force to retranslate)"
+            elif item.status == "modified":
+                detail = "output edited by hand (use --force to overwrite)"
+            else:
+                detail = item.error or "error"
+            table.add_row(item.input_path.name, marks[item.status], detail)
+        runtime.console.print(table)
+        runtime.console.print(
+            f"Translated [green]{result.n_translated}[/green], "
+            f"skipped [yellow]{result.n_skipped}[/yellow], "
+            f"stale [yellow]{result.n_stale}[/yellow], "
+            f"modified [yellow]{result.n_modified}[/yellow], "
+            f"failed [red]{result.n_failed}[/red].  "
+            f"Total: {_fmt_duration(translate_elapsed())}"
+        )
 
     if result.n_failed:
         raise typer.Exit(code=1)
     if fail_on_stale and result.n_stale:
-        runtime.console.print(
-            f"[red]Failing:[/red] --fail-on-stale set and {result.n_stale} "
-            f"output(s) were stale (use --force to retranslate)."
-        )
+        if not json_out:
+            runtime.console.print(
+                f"[red]Failing:[/red] --fail-on-stale set and {result.n_stale} "
+                f"output(s) were stale (use --force to retranslate)."
+            )
         raise typer.Exit(code=1)
     if fail_on_untranslated and untranslated_total:
-        runtime.console.print(
-            f"[red]Failing:[/red] --fail-on-untranslated set and {untranslated_total} "
-            f"line(s) across the batch were not translated."
-        )
+        if not json_out:
+            runtime.console.print(
+                f"[red]Failing:[/red] --fail-on-untranslated set and {untranslated_total} "
+                f"line(s) across the batch were not translated."
+            )
         raise typer.Exit(code=1)

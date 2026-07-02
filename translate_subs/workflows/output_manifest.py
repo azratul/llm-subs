@@ -18,15 +18,22 @@ Hashing the full path (not just the basename) keeps two same-named outputs in di
 independent, and sidesteps the filesystem's per-name length limit; the readable path is stored
 inside the manifest (`output`).
 
-The recorded model is the value the user/settings supplied, so an explicit `--model` change is
-detected; relying on a provider's built-in default and that default later changing is not (the
-manifest can't see the runner's fallback without building it). Source changes — the common case
-after re-ripping or editing a subtitle — are always detected.
+The recorded model is the one the runner will actually use: `translate` builds the provider (a
+side-effect-free construction — no network, the litellm import is lazy) and reads its resolved
+model, so with `--model` omitted the provider's built-in default (e.g. `claude-opus-4-8`) is
+recorded rather than an empty string. That way a later change to a provider's default flags affected
+outputs stale, instead of two runs both recording `""` and the change going unnoticed. Providers
+with no model concept (`identity`, `file-handoff`) still record `""`. One consequence: a manifest
+written before resolved-model recording landed (model `""`) is flagged stale once against a
+now-known default on the next run — an honest "can't prove the old output used this model", not a
+data loss.
+Source changes — the common case after re-ripping or editing a subtitle — are always detected.
 """
 
 from __future__ import annotations
 
 import hashlib
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Literal
 
@@ -37,6 +44,19 @@ from translate_subs.fsutil import atomic_write_text
 from translate_subs.workflows.support import episode_dir
 
 _MANIFEST_SUFFIX = ".manifest.json"
+
+
+def tool_version() -> str:
+    """Installed llm-subs version, or "" when running from an uninstalled source tree."""
+    try:
+        return version("llm-subs")
+    except PackageNotFoundError:
+        return ""
+
+
+def file_digest(path: Path) -> str:
+    """Content fingerprint of a written output file, to detect later hand-edits."""
+    return hashlib.sha256(path.read_bytes()).hexdigest()[:16]
 
 
 class OutputManifest(BaseModel):
@@ -61,6 +81,13 @@ class OutputManifest(BaseModel):
     # Empty on manifests written before these fields existed.
     fmt: str = ""
     output: str = ""
+    # The llm-subs version that wrote the output (provenance only; not a staleness signal — a bump
+    # must not mass-flag old outputs, `prompt_version` already covers prompt changes).
+    tool_version: str = ""
+    # Content hash of the output *as written*. Lets a later run notice the file was edited by hand
+    # since generation and refuse to clobber it (a separate axis from input staleness). Empty on
+    # legacy manifests and until the first write records it.
+    output_hash: str = ""
 
 
 def manifest_path(project: str, target: str, episode: str, output_path: Path) -> Path:
@@ -90,6 +117,28 @@ def load_manifest(path: Path) -> OutputManifest | None:
 
 def write_manifest(path: Path, manifest: OutputManifest) -> None:
     atomic_write_text(path, manifest.model_dump_json(indent=2), private=True)
+
+
+def refresh_output_manifest(project: str, target: str, output_path: Path) -> None:
+    """Re-record an output's content hash after *our own* `--apply` tools rewrite it.
+
+    `review --apply`/`tighten --apply` legitimately modify a translated file; without this the next
+    `translate` run would see the changed hash and wrongly report it as hand-edited. This refreshes
+    the tracking manifest (found by matching the recorded `output` path) so only edits made
+    *outside* the tool are flagged. No-op when nothing tracks this output (produced elsewhere).
+    """
+    from translate_subs.workflows.support import memory_root
+
+    root = memory_root(project, target)
+    if not root.exists():
+        return
+    wanted = str(output_path.resolve())
+    for mpath in root.glob(f"*/*{_MANIFEST_SUFFIX}"):
+        manifest = load_manifest(mpath)
+        if manifest is not None and manifest.output == wanted:
+            manifest.output_hash = file_digest(output_path)
+            write_manifest(mpath, manifest)
+            return
 
 
 def _changes(stored: OutputManifest, current: OutputManifest) -> list[str]:

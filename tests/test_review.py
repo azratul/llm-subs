@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 
 import pysubs2
+import pytest
 
 from translate_subs import config, pipeline
 from translate_subs.review.checks import (
@@ -124,6 +125,26 @@ def test_parse_findings_treats_string_false_as_not_auto():
     )
     findings = parse_findings(raw)
     assert [f.auto for f in findings] == [False, True, True]
+
+
+def test_is_single_span_edit():
+    from translate_subs.review.reviewer import is_single_span_edit
+
+    # One short term swapped -> accepted (with or without surrounding context).
+    assert is_single_span_edit("La Sword del héroe", "La Espada del héroe") is True
+    assert is_single_span_edit("Hola Sword", "Hola Espada") is True
+    assert is_single_span_edit("Alicia", "Alice") is True  # a name-only cue is a valid term swap
+    # The term AND a surrounding word changed -> two separate spans -> rejected.
+    assert is_single_span_edit("La Sword del héroe", "La Espada del guerrero") is False
+    # A full reword is never a single-span term fix.
+    assert is_single_span_edit("Buenos días amigo", "Qué tal compañero") is False
+    # A single span longer than a term is a reword (the model expanded/rewrote) -> rejected.
+    assert is_single_span_edit("Sword!", "Espada legendaria!") is False
+    assert is_single_span_edit("Sword", "Espada legendaria") is False
+    reworded = is_single_span_edit("Dice la Sword ahora", "Dice la palabra mucho más larga ahora")
+    assert reworded is False
+    # A large space-less CJK rewrite is bounded by the size cap even though it is one token.
+    assert is_single_span_edit("剣が光る", "伝説の剣が空高くまばゆく光り輝いている") is False
 
 
 def test_safe_policy_gender_requires_confirmed_speaker():
@@ -370,6 +391,124 @@ def test_review_translation_applies_only_safe_fixes(tmp_path, monkeypatch):
 
     expected = _fp(reloaded.events)
     assert f"Translated fingerprint: {expected}" in report_text
+
+
+def test_review_apply_rejects_multi_span_glossary_fix(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "PROJECTS_DIR", tmp_path / "projects")
+
+    src = pysubs2.SSAFile()
+    src.styles["White"] = pysubs2.SSAStyle()
+    src.events.append(
+        pysubs2.SSAEvent(start=1000, end=3000, text="The sword shines.", style="White")
+    )
+    src.events.append(
+        pysubs2.SSAEvent(start=3100, end=5000, text="The sword glows.", style="White")
+    )
+    source_path = tmp_path / "ep01.en.ass"
+    src.save(str(source_path))
+
+    translated = pysubs2.SSAFile()
+    translated.events.append(pysubs2.SSAEvent(start=1000, end=3000, text="La Sword brilla."))
+    translated.events.append(pysubs2.SSAEvent(start=3100, end=5000, text="La Sword brilla."))
+    translated_path = tmp_path / "ep01.es.srt"
+    translated.save(str(translated_path), format_="srt")
+
+    project_dir = tmp_path / "projects" / "Serie" / "es-latam"
+    project_dir.mkdir(parents=True)
+    (project_dir / "glossary.json").write_text(json.dumps({"Sword": "Espada"}), encoding="utf-8")
+
+    def fake_runner(prompt: str) -> str:
+        return json.dumps(
+            [
+                {  # only the term changes -> surgical, applied
+                    "scope": "line",
+                    "id": "0001",
+                    "kind": "glossary",
+                    "message": "use glossary",
+                    "current": "La Sword brilla.",
+                    "suggested": "La Espada brilla.",
+                    "auto_safe": True,
+                },
+                {  # term changes AND a surrounding word is reworded -> rejected, left for a human
+                    "scope": "line",
+                    "id": "0002",
+                    "kind": "glossary",
+                    "message": "use glossary",
+                    "current": "La Sword brilla.",
+                    "suggested": "La Espada reluce.",
+                    "auto_safe": True,
+                },
+            ]
+        )
+
+    result = pipeline.review_translation(
+        source_path,
+        translated_path,
+        project="Serie",
+        interactive=False,
+        apply=True,
+        runner=fake_runner,
+    )
+
+    reloaded = pysubs2.load(str(translated_path))
+    assert reloaded.events[0].plaintext == "La Espada brilla."  # single-span term fix applied
+    assert reloaded.events[1].plaintext == "La Sword brilla."  # multi-span rewrite rejected
+    assert result.n_applied == 1
+
+
+def test_review_apply_does_not_trip_modified_output(tmp_path, monkeypatch):
+    # Regression: `review --apply` legitimately edits the output; the run must re-bless its manifest
+    # so a later `translate` does not mistake that edit for a hand-edit (ModifiedOutputError).
+    from translate_subs.workflows.models import OutputExistsError
+
+    monkeypatch.setattr(config, "PROJECTS_DIR", tmp_path / "projects")
+
+    src = pysubs2.SSAFile()
+    src.styles["White"] = pysubs2.SSAStyle()
+    src.events.append(
+        pysubs2.SSAEvent(start=1000, end=3000, text="The Sword shines.", style="White")
+    )
+    source_path = tmp_path / "ep.en.ass"
+    src.save(str(source_path))
+
+    # Seed the glossary before translating so the manifest's memory_hash already reflects it;
+    # otherwise the later re-translate would trip StaleOutputError (memory changed), not the
+    # output-hash axis this test exercises.
+    proj = tmp_path / "projects" / "Serie" / "es-latam"
+    proj.mkdir(parents=True, exist_ok=True)
+    (proj / "glossary.json").write_text(json.dumps({"Sword": "Espada"}), encoding="utf-8")
+
+    tkw = dict(provider="identity", interactive=False, fmt="srt", project="Serie")
+    result = pipeline.translate_subtitle(source_path, **tkw)  # writes output + manifest
+
+    def fake_runner(prompt: str) -> str:
+        return json.dumps(
+            [
+                {
+                    "scope": "line",
+                    "id": "0001",
+                    "kind": "glossary",
+                    "message": "g",
+                    "current": "The Sword shines.",
+                    "suggested": "The Espada shines.",
+                    "auto_safe": True,
+                }
+            ]
+        )
+
+    r = pipeline.review_translation(
+        source_path,
+        result.output_path,
+        project="Serie",
+        interactive=False,
+        apply=True,
+        runner=fake_runner,
+    )
+    assert r.n_applied == 1  # the fix modified the output file
+
+    # The output was changed by our own tool, not by hand: re-translating skips, never "modified".
+    with pytest.raises(OutputExistsError):
+        pipeline.translate_subtitle(source_path, **tkw)
 
 
 def _gender_fix_review_fixture(tmp_path, monkeypatch):
