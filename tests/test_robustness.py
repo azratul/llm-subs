@@ -738,6 +738,51 @@ def test_doctor_provider_check_passthrough_needs_no_backend():
     assert diagnostics._provider_check("file-handoff").status == "ok"
 
 
+def test_doctor_warns_antigravity_weak_isolation(monkeypatch):
+    from translate_subs import diagnostics
+
+    # CLI present, so the provider check is ok; the extra isolation warning must still be emitted.
+    monkeypatch.setattr(diagnostics.shutil, "which", lambda name: "/usr/bin/agy")
+    by_name = {c.name: c for c in diagnostics.run_diagnostics(provider="antigravity")}
+    assert by_name["antigravity"].status == "ok"
+    assert by_name["antigravity isolation"].status == "warn"
+    assert "ollama" in by_name["antigravity isolation"].detail
+    # Other providers get no such warning (identity needs no backend and no network).
+    assert not any(
+        c.name == "antigravity isolation" for c in diagnostics.run_diagnostics(provider="identity")
+    )
+
+
+def test_warn_weak_backend_helper(capsys):
+    from translate_subs import cli
+
+    cli._warn_weak_backend("claude", "ollama")
+    assert "antigravity" not in capsys.readouterr().out
+    # Any provider in the set triggers it (batch passes both translate and pre-analyze providers).
+    cli._warn_weak_backend("claude", "antigravity")
+    assert "antigravity" in capsys.readouterr().out
+
+
+def test_analyze_warns_on_antigravity_before_running(tmp_path, monkeypatch):
+    from translate_subs import cli
+
+    monkeypatch.setattr(config, "PROJECTS_DIR", tmp_path / "projects")
+
+    def _boom(*a, **k):
+        raise cli.PipelineError("stop before hitting the backend")
+
+    monkeypatch.setattr(cli, "analyze_subtitle", _boom)
+    src = tmp_path / "ep.en.srt"
+    subs = pysubs2.SSAFile()
+    subs.events.append(pysubs2.SSAEvent(start=0, end=1500, text="Hello."))
+    subs.save(str(src), format_="srt")
+    res = CliRunner().invoke(
+        app, ["analyze", str(src), "--project", "P", "--provider", "antigravity", "-y"]
+    )
+    # Warning emitted at the analyze call site, not only in translate/batch.
+    assert "antigravity" in res.stdout
+
+
 def test_doctor_reports_cli_version(monkeypatch):
     from translate_subs import diagnostics
 
@@ -1268,6 +1313,22 @@ def test_batch_cli_fail_on_stale(tmp_path, monkeypatch):
     strict = CliRunner().invoke(app, ["batch", str(tmp_path), "--fail-on-stale"])
     assert strict.exit_code == 1
     assert "stale" in strict.stdout
+
+
+def test_project_status_cli_smoke(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "PROJECTS_DIR", tmp_path / "projects")
+    src = tmp_path / "ep.en.srt"
+    subs = pysubs2.SSAFile()
+    subs.events.append(pysubs2.SSAEvent(start=0, end=1500, text="Hello."))
+    subs.save(str(src), format_="srt")
+    pipeline.translate_subtitle(src, provider="identity", project="P", interactive=False, fmt="srt")
+
+    ok = CliRunner().invoke(app, ["project-status", "P"])
+    assert ok.exit_code == 0
+    assert "Glossary" in ok.stdout
+
+    missing = CliRunner().invoke(app, ["project-status", "Nope"])
+    assert missing.exit_code == 1
 
 
 # --- per-project settings ------------------------------------------------------------

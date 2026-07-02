@@ -197,4 +197,14 @@ def run_diagnostics(provider: str | None = None, model: str | None = None) -> li
     ]
     if provider is not None:
         checks.append(_provider_check(provider, model))
+        if provider == "antigravity":
+            checks.append(
+                Check(
+                    "antigravity isolation",
+                    "warn",
+                    "weakest backend: --sandbox restricts only the terminal, not tools, so a "
+                    "crafted subtitle cue could steer it. Prefer a local `ollama` model for "
+                    "material from an untrusted source.",
+                )
+            )
     return checks

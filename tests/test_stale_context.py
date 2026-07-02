@@ -213,6 +213,32 @@ def test_legacy_context_without_hash_is_never_stale(tmp_path, monkeypatch):
     assert result.context_stale is False
 
 
+def test_project_status_reports_memory_episodes_and_outputs(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "PROJECTS_DIR", tmp_path / "projects")
+    src = tmp_path / "ep.en.srt"
+    _save_srt(src, "Aya draws her sword.")
+    pipeline.analyze_subtitle(
+        src, project="P", interactive=False, runner=lambda _p: _ANALYSIS_REPLY
+    )
+    pipeline.translate_subtitle(src, provider="identity", project="P", interactive=False, fmt="srt")
+
+    status = pipeline.project_status("P", "es-latam")
+    assert status.glossary_terms >= 1  # "Sword" -> "Espada"
+    assert status.characters >= 1  # Aya
+    assert len(status.episodes) == 1
+    ep = status.episodes[0]
+    assert ep.analyzed is True  # episode.context.json was written
+    assert ep.has_checkpoint_file is False  # identity is not checkpointed
+    assert len(ep.outputs) == 1  # the tracked output artifact (full path recorded in the manifest)
+    assert ep.outputs[0].endswith("ep.es-latam.srt")
+
+
+def test_project_status_errors_without_memory(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "PROJECTS_DIR", tmp_path / "projects")
+    with pytest.raises(pipeline.PipelineError, match="No memory"):
+        pipeline.project_status("Nope", "es-latam")
+
+
 def test_update_and_compact_memory_workflows(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "PROJECTS_DIR", tmp_path / "projects")
     src = tmp_path / "ep.en.srt"

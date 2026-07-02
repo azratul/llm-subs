@@ -142,6 +142,26 @@ class ResolveConflictsResult:
 
 
 @dataclass
+class EpisodeStatus:
+    name: str
+    analyzed: bool  # episode.context.json present
+    # A checkpoint file is on disk. Not "resumable": whether its blocks are reused depends on the
+    # provider/model/content matching at run time, which an offline status view can't verify.
+    has_checkpoint_file: bool
+    outputs: list[str] = field(default_factory=list)  # output paths recorded in each manifest
+
+
+@dataclass
+class ProjectStatusResult:
+    project_dir: Path
+    target: str
+    glossary_terms: int
+    characters: int
+    conflicts: int
+    episodes: list[EpisodeStatus] = field(default_factory=list)
+
+
+@dataclass
 class ReviewResult:
     report: ReviewReport
     report_path: Path

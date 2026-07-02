@@ -143,6 +143,7 @@ def analyze(
     model = overrides.get("analyze_model") or overrides.get("model", model)
     reasoning = overrides.get("analyze_reasoning") or overrides.get("reasoning", reasoning)
     lang = overrides.get("lang", lang)
+    runtime._warn_weak_backend(provider)
     try:
         with runtime.console.status("Analyzing…", spinner="dots"):
             result = runtime.analyze_subtitle(
@@ -230,6 +231,8 @@ def compact_memory_command(
 ):
     """Prune redundant series memory; with --provider also detects character aliases via LLM."""
     runtime = _runtime()
+    if provider:  # the LLM runs only when a provider is given
+        runtime._warn_weak_backend(provider)
 
     def alias_confirm(match) -> str:
         if non_interactive:
@@ -268,6 +271,47 @@ def compact_memory_command(
         runtime.console.print(f"Aliases merged: [green]{len(report.merged_aliases)}[/green]")
         for match in report.merged_aliases:
             runtime.console.print(f"  {match.alias} → {match.canonical}")
+    runtime.console.print(f"Memory: [green]{result.project_dir}[/green]")
+
+
+def project_status_command(
+    project: str = typer.Argument(..., help="Project/series name."),
+    target: str = typer.Option("es-latam", help="Target language/variant whose state to show."),
+):
+    """Show a project's stored state for a target: memory, analyzed episodes, checkpoints, outputs.
+
+    Reads only what is on disk (no LLM call, no source access). Output staleness is not recomputed
+    here — run `batch` to re-check each output against its source.
+    """
+    runtime = _runtime()
+    try:
+        result = runtime.project_status(project, target)
+    except runtime._EXPECTED_ERRORS as exc:
+        runtime.console.print(f"[red]Error:[/red] {exc}")
+        raise typer.Exit(code=1)
+
+    analyzed = sum(1 for ep in result.episodes if ep.analyzed)
+    with_ckpt = sum(1 for ep in result.episodes if ep.has_checkpoint_file)
+    runtime.console.print(
+        f"[bold]{project}[/bold] · target [bold]{result.target}[/bold]\n"
+        f"Glossary terms: [green]{result.glossary_terms}[/green]  "
+        f"Characters: [green]{result.characters}[/green]  "
+        f"Conflicts: [yellow]{result.conflicts}[/yellow]\n"
+        f"Episodes: [green]{len(result.episodes)}[/green] "
+        f"(analyzed [green]{analyzed}[/green], with checkpoint file [cyan]{with_ckpt}[/cyan])"
+    )
+    if result.episodes:
+        table = Table(title=f"{project} — {result.target}")
+        for column in ("episode", "analyzed", "checkpoint file", "outputs"):
+            table.add_column(column)
+        for ep in result.episodes:
+            table.add_row(
+                ep.name,
+                "[green]yes[/green]" if ep.analyzed else "[dim]no[/dim]",
+                "[cyan]yes[/cyan]" if ep.has_checkpoint_file else "[dim]no[/dim]",
+                "\n".join(ep.outputs) or "[dim]—[/dim]",
+            )
+        runtime.console.print(table)
     runtime.console.print(f"Memory: [green]{result.project_dir}[/green]")
 
 

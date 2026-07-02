@@ -148,6 +148,7 @@ def translate(
     reasoning = overrides.get("reasoning", reasoning)
     lang = overrides.get("lang", lang)
     format = overrides.get("format", format)
+    runtime._warn_weak_backend(provider)
 
     def run(on_progress=None):
         return runtime.translate_subtitle(
@@ -336,6 +337,10 @@ def batch(
         reasoning = overrides.get("reasoning", reasoning)
         lang = overrides.get("lang", lang)
         format = overrides.get("format", format)
+        providers_used = {provider}
+        if pre_analyze:
+            providers_used.add(overrides.get("analyze_provider") or provider)
+        runtime._warn_weak_backend(*providers_used)
 
         if pre_analyze:
             runtime.console.print("[bold]Phase 1/2: Analyzing episodes…[/bold]")

@@ -29,6 +29,9 @@ from translate_subs.workflows.memory import (
 )
 from translate_subs.workflows.memory import prior_known as _prior_known_impl
 from translate_subs.workflows.memory import (
+    project_status as _project_status,
+)
+from translate_subs.workflows.memory import (
     resolve_conflicts as _resolve_conflicts,
 )
 from translate_subs.workflows.memory import update_memory as _update_memory
@@ -102,6 +105,7 @@ BatchItem = _BatchItem
 PipelineError = _PipelineError
 OutputExistsError = _OutputExistsError
 project_dir = _project_dir
+project_status = _project_status
 context_path = _context_path
 review_path = _review_path
 readability_path = _readability_path

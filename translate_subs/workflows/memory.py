@@ -34,7 +34,9 @@ from translate_subs.workflows.models import (
     AnalyzeResult,
     CompactMemoryResult,
     ConflictPrompt,
+    EpisodeStatus,
     PipelineError,
+    ProjectStatusResult,
     ResolveConflictsResult,
     UpdateMemoryResult,
 )
@@ -240,6 +242,55 @@ def compact_memory(
 
     project_memory.save()
     return CompactMemoryResult(project_dir=project_path, report=report)
+
+
+def project_status(project: str, target: str = "es-latam") -> ProjectStatusResult:
+    """Summarize a project's stored state for one target — no LLM call, no source access.
+
+    Reads only what is on disk (series memory, conflicts, per-episode context/checkpoint/manifests)
+    so the user can see, at a glance, what has been analyzed, what has a resumable checkpoint and
+    which outputs are tracked. Output staleness is deliberately not recomputed: that needs the
+    source files, so run `batch` (which re-checks each manifest) to detect stale outputs.
+    """
+    from translate_subs.ai.checkpoint import CHECKPOINT_FILE
+    from translate_subs.workflows.output_manifest import load_manifest
+
+    project_path = memory_root(project, target)
+    if not project_path.exists():
+        raise PipelineError(f"No memory at {project_path}. Run `analyze` or `translate` first.")
+    project_memory = ProjectMemory.load(project_path)
+    conflicts = len(project_memory.load_conflicts())
+
+    episodes: list[EpisodeStatus] = []
+    for entry in sorted(project_path.iterdir()):
+        if not entry.is_dir():
+            continue
+        # Read the manifest and use its recorded output path, since the file is now named by a hash
+        # (not the output). A legacy manifest (no recorded output) or a corrupt one is skipped.
+        outputs = []
+        for mpath in entry.glob("*.manifest.json"):
+            manifest = load_manifest(mpath)
+            if manifest is not None and manifest.output:
+                outputs.append(manifest.output)
+        episodes.append(
+            EpisodeStatus(
+                name=entry.name,
+                analyzed=(entry / "episode.context.json").exists(),
+                # Existence only: whether it actually resumes depends on the provider/model/content
+                # matching at run time, which this offline view can't check.
+                has_checkpoint_file=(entry / CHECKPOINT_FILE).exists(),
+                outputs=sorted(outputs),
+            )
+        )
+
+    return ProjectStatusResult(
+        project_dir=project_path,
+        target=target,
+        glossary_terms=len(project_memory.glossary),
+        characters=len(project_memory.memory.characters),
+        conflicts=conflicts,
+        episodes=episodes,
+    )
 
 
 def _apply_conflict_choice(project_memory: ProjectMemory, conflict: dict) -> bool:

@@ -9,6 +9,15 @@ text, so a re-timed or re-styled source — which leaves the existing output des
 flagged stale too; `memory_hash` covers the series memory and episode context, so editing the
 glossary or characters flags outputs whose *source* is unchanged.
 
+The manifest is **per output artifact**, named by a hash of the output's *resolved path*
+(`<hash>.manifest.json`), not one fixed name per episode. One episode can yield several artifacts —
+an `.ass` and an `.srt`, or the same basename written to two different `--output`/`--out-dir`
+destinations — and a single shared manifest would be overwritten by whichever ran last, masking the
+staleness of the others (force-refreshing the `.ass` would mark the untouched `.srt` up to date).
+Hashing the full path (not just the basename) keeps two same-named outputs in different directories
+independent, and sidesteps the filesystem's per-name length limit; the readable path is stored
+inside the manifest (`output`).
+
 The recorded model is the value the user/settings supplied, so an explicit `--model` change is
 detected; relying on a provider's built-in default and that default later changing is not (the
 manifest can't see the runner's fallback without building it). Source changes — the common case
@@ -17,6 +26,7 @@ after re-ripping or editing a subtitle — are always detected.
 
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 from typing import Literal
 
@@ -26,7 +36,7 @@ from translate_subs.ai.provider import TRANSLATION_PROMPT_VERSION
 from translate_subs.fsutil import atomic_write_text
 from translate_subs.workflows.support import episode_dir
 
-_MANIFEST_FILE = "output.manifest.json"
+_MANIFEST_SUFFIX = ".manifest.json"
 
 
 class OutputManifest(BaseModel):
@@ -46,10 +56,22 @@ class OutputManifest(BaseModel):
     # output would be skipped as up to date. Defaults to "" so a manifest written before this field
     # loads as "no memory recorded" and is not spuriously flagged (see `_changes`).
     memory_hash: str = ""
+    # Self-description of the artifact this manifest tracks. Not part of the staleness comparison —
+    # a different format/filename is a *separate* artifact with its own manifest, never a stale one.
+    # Empty on manifests written before these fields existed.
+    fmt: str = ""
+    output: str = ""
 
 
-def manifest_path(project: str, target: str, episode: str) -> Path:
-    return episode_dir(project, target, episode) / _MANIFEST_FILE
+def manifest_path(project: str, target: str, episode: str, output_path: Path) -> Path:
+    """State-dir manifest for one output artifact, named by a hash of its resolved path.
+
+    Keyed on the full resolved output path (not its basename) so two outputs sharing a filename in
+    different directories keep separate manifests, and a long output name can't overflow the
+    filesystem's per-name limit. The readable path is stored inside the manifest (`output`).
+    """
+    digest = hashlib.sha256(str(output_path.resolve()).encode("utf-8")).hexdigest()[:16]
+    return episode_dir(project, target, episode) / f"{digest}{_MANIFEST_SUFFIX}"
 
 
 def load_manifest(path: Path) -> OutputManifest | None:

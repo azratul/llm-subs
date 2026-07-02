@@ -84,6 +84,8 @@ def review(
     model = overrides.get("model", model)
     reasoning = overrides.get("reasoning", reasoning)
     lang = overrides.get("lang", lang)
+    if not no_llm:
+        runtime._warn_weak_backend(provider)
     status = runtime.console.status("Reviewing…", spinner="dots")
     status.start()
     try:
@@ -185,6 +187,8 @@ def tighten(
         max_lines=max_lines,
         max_chars_per_second=max_cps,
     )
+    if not no_llm:
+        runtime._warn_weak_backend(provider)
     status = runtime.console.status("Checking readability…", spinner="dots")
     status.start()
     try:

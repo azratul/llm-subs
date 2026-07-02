@@ -113,6 +113,14 @@ For sensitive material, or to avoid per-token billing, use a local backend. See
 [SECURITY.md](SECURITY.md) for the threat model, including prompt-injection notes when routing
 untrusted subtitles through an agent CLI that has tool access.
 
+> **⚠️ For material from an untrusted source, prefer a local `ollama` model.** The agent CLIs are
+> each launched with their own containment (denied tools, read-only sandbox, an empty throwaway
+> working directory), but **`antigravity` is the weakest** of them: its `--sandbox` restricts only
+> the terminal, not the agent's tools, so its sole guard is that throwaway cwd. `doctor --provider
+> antigravity` and every command that runs the LLM (`translate`, `batch`, `analyze`, `review`,
+> `tighten`, `compact-memory --provider`) warn about this at runtime. When in doubt, translate with
+> `ollama` — the subtitle text never leaves your machine and no agent tools are in reach.
+
 ## Quick start
 
 If you installed the tool globally, use `llm-subs`. If you are running from a checkout, use
@@ -289,6 +297,7 @@ llm-subs translate "$EP" --provider ollama --model qwen3:4b \
 | `update-memory <input>` | Re-merges an existing `episode.context.json` into the memory (no LLM call). |
 | `compact-memory <project>` | Prunes redundant memory (identity glossary terms, duplicate/info-less characters). |
 | `resolve-conflicts <project>` | Walks flagged `conflicts.json` entries interactively (keep stored / use suggested / skip). |
+| `project-status <project>` | Shows a project's stored state for a target: glossary/character/conflict counts, and per-episode whether it was analyzed, whether a checkpoint file is present, and which output paths are tracked (no LLM call). |
 | `validate <subtitle>` | Structural validation (parseable, timings, no leftover markup). |
 | `doctor [--provider <name>]` | Checks the environment: media tools (ffprobe/ffmpeg), writable data/cache dirs, and — with `--provider` — that provider's backend (CLI on PATH, reachable Ollama server, or installed litellm). |
 | `purge-cache` | Deletes the cache of subtitle tracks extracted from containers (`$XDG_CACHE_HOME/llm-subs/work`). Series memory and reports are not touched. |

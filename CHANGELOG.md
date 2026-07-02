@@ -6,6 +6,32 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- `project-status <project> [--target ...]`: show a project's stored state on disk — glossary/
+  character/conflict counts, and per-episode whether it was analyzed, whether a checkpoint *file*
+  is present (not whether it will resume — that depends on run-time settings this offline view
+  can't check), and which output paths are tracked (read from each manifest, so legacy/corrupt
+  manifests are ignored). No LLM call and no source access; output staleness is not recomputed here
+  (run `batch` for that).
+
+### Changed
+- The output manifest is now **per artifact**, named by a hash of the output's *resolved path*
+  (`<hash>.manifest.json`), not one fixed file per episode. Distinct outputs of the same episode —
+  an `.ass` and an `.srt`, or the same basename written to two different directories — kept a single
+  shared manifest, so force-refreshing one silently marked the others up to date; each output now
+  tracks its own provenance and records its format and full path. Hashing the full path (not the
+  basename) also avoids colliding two same-named outputs and keeps the filename within the
+  filesystem's length limit. Pre-existing `output.manifest.json` files are treated as legacy/absent
+  (the output is skipped, never wrongly flagged stale) until its next `--force` rewrite.
+
+### Security
+- Stronger, louder guidance to prefer a local `ollama` model for untrusted material: `doctor
+  --provider antigravity` emits an explicit weak-isolation warning, and **every command that runs
+  the LLM** (`translate`, `batch` — including its `--pre-analyze` provider —, `analyze`, `review`,
+  `tighten`, and `compact-memory --provider`) warns at runtime when the antigravity backend is
+  actually used; the README security note calls it out too. No behaviour change to the sandboxing
+  itself.
+
 ## [0.6.0] - 2026-07-01
 
 ### Security

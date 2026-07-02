@@ -174,8 +174,10 @@ def translate_subtitle(
         model=model or "",
         reasoning=reasoning or "",
         memory_hash=memory_prompt_digest(memory_rules),
+        fmt=fmt,
+        output=str(out_file.resolve()),
     )
-    out_manifest_path = manifest_path(project_name, target, episode_name)
+    out_manifest_path = manifest_path(project_name, target, episode_name, out_file)
     if out_file.exists() and not force:
         stored = load_manifest(out_manifest_path)
         if stored is not None and is_stale(stored, out_manifest):

@@ -15,6 +15,7 @@ from translate_subs.commands.project import (
     analyze,
     compact_memory_command,
     config,
+    project_status_command,
     resolve_conflicts_command,
     update_memory_command,
 )
@@ -34,6 +35,7 @@ batch_analyze = _pipeline.batch_analyze
 batch_translate = _pipeline.batch_translate
 compact_memory = _pipeline.compact_memory
 project_dir = _pipeline.project_dir
+project_status = _pipeline.project_status
 resolve_conflicts = _pipeline.resolve_conflicts
 review_translation = _pipeline.review_translation
 tighten_subtitle = _pipeline.tighten_subtitle
@@ -68,6 +70,21 @@ app = typer.Typer(
     "output is .ass by default, .srt with --format srt.",
 )
 console = Console()
+
+
+def _warn_weak_backend(*providers: str) -> None:
+    """Warn when antigravity is about to process untrusted subtitle text through the LLM.
+
+    Call from every command that actually runs the LLM, with the provider(s) that will run (e.g.
+    both the translate and pre-analyze providers for `batch`), so the weakest-isolated backend is
+    flagged wherever it is used — not only in `translate`/`batch`.
+    """
+    if "antigravity" in providers:
+        console.print(
+            "[yellow]Warning:[/yellow] 'antigravity' is the weakest-isolated backend (its "
+            "--sandbox restricts only the terminal, not tools). Prefer a local 'ollama' model "
+            "for material from an untrusted source."
+        )
 
 
 def _conflict_resolver(conflict: Conflict) -> bool:
@@ -169,6 +186,7 @@ app.command()(analyze)
 app.command(name="update-memory")(update_memory_command)
 app.command(name="compact-memory")(compact_memory_command)
 app.command(name="resolve-conflicts")(resolve_conflicts_command)
+app.command(name="project-status")(project_status_command)
 app.command()(review)
 app.command()(tighten)
 app.command()(doctor)

@@ -235,7 +235,7 @@ def test_translate_writes_manifest_and_reports_output_exists_when_unchanged(tmp_
     kw = dict(provider="identity", interactive=False, fmt="srt", project="P")
 
     pipeline.translate_subtitle(source, **kw)
-    manifests = list(projects.rglob("output.manifest.json"))
+    manifests = list(projects.rglob("*.manifest.json"))
     assert len(manifests) == 1
     saved = OutputManifest.model_validate_json(manifests[0].read_text("utf-8"))
     assert saved.provider == "identity" and saved.target == "es-latam" and saved.source_hash
@@ -262,6 +262,72 @@ def test_changed_source_reports_stale_and_force_refreshes(tmp_path, monkeypatch)
     pipeline.translate_subtitle(source, force=True, **kw)
     with pytest.raises(OutputExistsError):
         pipeline.translate_subtitle(source, **kw)
+
+
+def test_ass_and_srt_outputs_get_independent_manifests(tmp_path, monkeypatch):
+    # Regression: a single per-episode manifest was shared by every artifact, so force-refreshing
+    # one format silently marked the other up to date. Each output must track its own provenance.
+    from translate_subs.workflows.models import StaleOutputError
+
+    monkeypatch.setattr(config, "PROJECTS_DIR", tmp_path / "projects")
+    source = tmp_path / "ep.en.srt"
+    _srt_with(source, "Hello.")
+    ass_kw = dict(provider="identity", interactive=False, fmt="ass", project="P")
+    srt_kw = dict(provider="identity", interactive=False, fmt="srt", project="P")
+
+    pipeline.translate_subtitle(source, **ass_kw)
+    pipeline.translate_subtitle(source, **srt_kw)
+    manifests = list((tmp_path / "projects").rglob("*.manifest.json"))
+    assert len(manifests) == 2  # one per artifact, not one shared
+
+    # Edit the source and force-refresh only the .ass: the .srt manifest must stay on the old
+    # source and still report stale, instead of being masked by the .ass refresh.
+    _srt_with(source, "A completely different line.")
+    pipeline.translate_subtitle(source, force=True, **ass_kw)
+    with pytest.raises(StaleOutputError, match="source"):
+        pipeline.translate_subtitle(source, **srt_kw)
+
+
+def test_same_basename_different_dirs_get_independent_manifests(tmp_path, monkeypatch):
+    # The manifest is keyed on the resolved output path, not the basename, so the same filename
+    # written to two directories doesn't collapse onto one shared manifest.
+    from translate_subs.workflows.models import StaleOutputError
+
+    monkeypatch.setattr(config, "PROJECTS_DIR", tmp_path / "projects")
+    source = tmp_path / "ep.en.srt"
+    _srt_with(source, "Hello.")
+    a = tmp_path / "A" / "ep.es-latam.srt"
+    b = tmp_path / "B" / "ep.es-latam.srt"
+    kw = dict(provider="identity", interactive=False, fmt="srt", project="P")
+
+    pipeline.translate_subtitle(source, output=a, **kw)
+    pipeline.translate_subtitle(source, output=b, **kw)
+    assert len(list((tmp_path / "projects").rglob("*.manifest.json"))) == 2
+
+    _srt_with(source, "A completely different line.")
+    pipeline.translate_subtitle(source, output=a, force=True, **kw)  # refresh only A
+    with pytest.raises(StaleOutputError, match="source"):
+        pipeline.translate_subtitle(source, output=b, **kw)  # B still stale, not masked by A
+
+
+def test_project_status_ignores_legacy_and_corrupt_manifests(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "PROJECTS_DIR", tmp_path / "projects")
+    source = tmp_path / "ep.en.srt"
+    _srt_with(source, "Hello.")
+    kw = dict(provider="identity", interactive=False, fmt="srt", project="P")
+    pipeline.translate_subtitle(source, **kw)
+
+    ep_dir = next((tmp_path / "projects").rglob("*.manifest.json")).parent
+    # A legacy manifest (fixed name, no recorded output) and a corrupt one must not appear as
+    # phantom outputs in the status view.
+    (ep_dir / "output.manifest.json").write_text(
+        '{"source_hash":"x","target":"es-latam","provider":"identity","model":""}', "utf-8"
+    )
+    (ep_dir / "garbage.manifest.json").write_text("{not valid json", "utf-8")
+
+    status = pipeline.project_status("P", "es-latam")
+    outputs = status.episodes[0].outputs
+    assert len(outputs) == 1 and outputs[0].endswith("ep.es-latam.srt")
 
 
 def test_changed_model_reports_stale(tmp_path, monkeypatch):
@@ -336,7 +402,7 @@ def test_legacy_manifest_without_memory_hash_not_flagged(tmp_path, monkeypatch):
 
     # Rewrite the manifest as a pre-memory_hash release would have (field empty): a later run
     # computes a real digest, but the stored empty value must not spuriously flag the output.
-    manifests = list((tmp_path / "projects").rglob("output.manifest.json"))
+    manifests = list((tmp_path / "projects").rglob("*.manifest.json"))
     stored = OutputManifest.model_validate_json(manifests[0].read_text("utf-8"))
     write_manifest(manifests[0], stored.model_copy(update={"memory_hash": ""}))
     with pytest.raises(OutputExistsError):
