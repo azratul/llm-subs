@@ -118,7 +118,7 @@ def test_ollama_wraps_invalid_json_as_retryable(monkeypatch):
         def __exit__(self, *args):
             return None
 
-        def read(self):
+        def read(self, limit=None):
             return b"not-json"
 
     monkeypatch.setattr(api_adapters.urllib.request, "urlopen", lambda *a, **k: Response())

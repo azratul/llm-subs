@@ -35,35 +35,51 @@ def style_guide_rules(sg: StyleGuide) -> list[str]:
     return rules
 
 
+def _merged_glossary(pm: ProjectMemory, ctx: EpisodeContext | None) -> dict[str, str]:
+    """Episode glossary overlaid with the series glossary (series wins on overlap)."""
+    glossary = dict(ctx.glossary) if ctx else {}
+    glossary.update(pm.glossary)
+    return glossary
+
+
+def _confirmed_genders(pm: ProjectMemory, ctx: EpisodeContext | None) -> dict[str, str]:
+    """Per-character confirmed gender, episode context first, series memory winning on overlap."""
+    genders: dict[str, str] = {}
+    for ch in ctx.characters if ctx else ():
+        if ch.gender in ("male", "female"):
+            genders[ch.name] = ch.gender
+    for cm in pm.memory.characters:
+        if cm.gender in ("male", "female"):
+            genders[cm.name] = cm.gender
+    return genders
+
+
+def _speech_styles(pm: ProjectMemory, ctx: EpisodeContext | None) -> dict[str, str]:
+    """Per-character speech-style hints, episode context first, series memory winning on overlap."""
+    styles: dict[str, str] = {}
+    for ch in ctx.characters if ctx else ():
+        if ch.speech_style and ch.speech_style.strip():
+            styles[ch.name] = ch.speech_style.strip()
+    for cm in pm.memory.characters:
+        if cm.speech_style and cm.speech_style.strip():
+            styles[cm.name] = cm.speech_style.strip()
+    return styles
+
+
 def translation_rules(pm: ProjectMemory, ctx: EpisodeContext | None) -> list[str]:
     rules = style_guide_rules(pm.style_guide)
 
-    glossary = dict(ctx.glossary) if ctx else {}
-    glossary.update(pm.glossary)  # series wins
+    glossary = _merged_glossary(pm, ctx)
     if glossary:
         terms = "; ".join(f"{src} -> {dst}" for src, dst in glossary.items())
         rules.append(f"Use these fixed glossary renderings: {terms}.")
 
-    genders: dict[str, str] = {}
-    if ctx:
-        for ch in ctx.characters:
-            if ch.gender in ("male", "female"):
-                genders[ch.name] = ch.gender
-    for cm in pm.memory.characters:  # series wins
-        if cm.gender in ("male", "female"):
-            genders[cm.name] = cm.gender
+    genders = _confirmed_genders(pm, ctx)
     if genders:
         listing = "; ".join(f"{name}: {gender}" for name, gender in genders.items())
         rules.append(f"Grammatical gender by character: {listing}.")
 
-    speech_styles: dict[str, str] = {}
-    if ctx:
-        for ch in ctx.characters:
-            if ch.speech_style and ch.speech_style.strip():
-                speech_styles[ch.name] = ch.speech_style.strip()
-    for cm in pm.memory.characters:  # series wins
-        if cm.speech_style and cm.speech_style.strip():
-            speech_styles[cm.name] = cm.speech_style.strip()
+    speech_styles = _speech_styles(pm, ctx)
     if speech_styles:
         listing = "; ".join(f"{name}: {style}" for name, style in speech_styles.items())
         rules.append(f"Speech style by character: {listing}.")
@@ -103,28 +119,10 @@ def build_memory_rules(pm: ProjectMemory, ctx: EpisodeContext | None) -> MemoryR
         if ctx.episode_summary.strip():
             base = base + [f"Episode context: {ctx.episode_summary.strip()}"]
 
-    glossary = dict(ctx.glossary) if ctx else {}
-    glossary.update(pm.glossary)  # series wins
     # identity mappings carry no instruction
-    glossary = {src: dst for src, dst in glossary.items() if src != dst}
-
-    genders: dict[str, str] = {}
-    if ctx:
-        for ch in ctx.characters:
-            if ch.gender in ("male", "female"):
-                genders[ch.name] = ch.gender
-    for cm in pm.memory.characters:  # series wins
-        if cm.gender in ("male", "female"):
-            genders[cm.name] = cm.gender
-
-    speech_styles: dict[str, str] = {}
-    if ctx:
-        for ch in ctx.characters:
-            if ch.speech_style and ch.speech_style.strip():
-                speech_styles[ch.name] = ch.speech_style.strip()
-    for cm in pm.memory.characters:  # series wins
-        if cm.speech_style and cm.speech_style.strip():
-            speech_styles[cm.name] = cm.speech_style.strip()
+    glossary = {src: dst for src, dst in _merged_glossary(pm, ctx).items() if src != dst}
+    genders = _confirmed_genders(pm, ctx)
+    speech_styles = _speech_styles(pm, ctx)
 
     # Deduplicate bidirectional pairs (A→B and B→A are stored separately but carry the same
     # semantic information). Keep the most informative description (longest wins).

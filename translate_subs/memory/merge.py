@@ -17,7 +17,7 @@ from typing import Literal
 
 from pydantic import BaseModel
 
-from translate_subs.ai.analysis import EpisodeContext
+from translate_subs.ai.analysis import EpisodeCharacter, EpisodeContext
 from translate_subs.memory.models import CharacterMemory, SeriesMemory, normalize_gender
 
 ConflictPolicy = Literal["ask", "keep", "overwrite", "flag"]
@@ -68,17 +68,13 @@ def _decide(
     return False
 
 
-def merge_episode_context(
-    memory: SeriesMemory,
+def _merge_glossary_terms(
     glossary: dict[str, str],
     ctx: EpisodeContext,
-    *,
-    policy: ConflictPolicy = "flag",
-    resolver: ConflictResolver | None = None,
-) -> MergeReport:
-    """Merge `ctx` into `memory`/`glossary` in place; return what happened."""
-    report = MergeReport()
-
+    policy: ConflictPolicy,
+    resolver: ConflictResolver | None,
+    report: MergeReport,
+) -> None:
     for term, rendering in ctx.glossary.items():
         current = glossary.get(term)
         if current is None:
@@ -90,45 +86,75 @@ def merge_episode_context(
                 glossary[term] = rendering
                 report.applied.append(f"glossary (overwrite): {term} -> {rendering}")
 
-    for ch in ctx.characters:
-        existing = memory.find(ch.name)
-        if existing is None:
-            memory.characters.append(
-                CharacterMemory(
-                    name=ch.name,
-                    gender=normalize_gender(ch.gender),
-                    speech_style=ch.speech_style,
-                    relationships=dict(ch.relationships),
-                )
+
+def _merge_gender(
+    existing: CharacterMemory,
+    ch: EpisodeCharacter,
+    policy: ConflictPolicy,
+    resolver: ConflictResolver | None,
+    report: MergeReport,
+) -> None:
+    new_gender = normalize_gender(ch.gender)
+    if new_gender not in ("male", "female"):
+        return
+    if existing.gender == "unknown":
+        existing.gender = new_gender
+        report.applied.append(f"gender: {ch.name} -> {new_gender}")
+    elif existing.gender != new_gender:
+        c = Conflict(kind="gender", key=ch.name, existing=existing.gender, suggested=new_gender)
+        if _decide(c, policy, resolver, report):
+            existing.gender = new_gender
+            report.applied.append(f"gender (overwrite): {ch.name} -> {ch.gender}")
+
+
+def _merge_character(
+    memory: SeriesMemory,
+    ch: EpisodeCharacter,
+    policy: ConflictPolicy,
+    resolver: ConflictResolver | None,
+    report: MergeReport,
+) -> None:
+    existing = memory.find(ch.name)
+    if existing is None:
+        memory.characters.append(
+            CharacterMemory(
+                name=ch.name,
+                gender=normalize_gender(ch.gender),
+                speech_style=ch.speech_style,
+                relationships=dict(ch.relationships),
             )
-            report.applied.append(f"character: {ch.name}")
-            continue
+        )
+        report.applied.append(f"character: {ch.name}")
+        return
 
-        new_gender = normalize_gender(ch.gender)
-        if new_gender in ("male", "female"):
-            if existing.gender == "unknown":
-                existing.gender = new_gender
-                report.applied.append(f"gender: {ch.name} -> {new_gender}")
-            elif existing.gender != new_gender:
-                c = Conflict(
-                    kind="gender", key=ch.name, existing=existing.gender, suggested=new_gender
-                )
-                if _decide(c, policy, resolver, report):
-                    existing.gender = new_gender
-                    report.applied.append(f"gender (overwrite): {ch.name} -> {ch.gender}")
+    _merge_gender(existing, ch, policy, resolver, report)
 
-        if ch.speech_style and not existing.speech_style:
-            existing.speech_style = ch.speech_style
-            report.applied.append(f"speech_style: {ch.name}")
+    if ch.speech_style and not existing.speech_style:
+        existing.speech_style = ch.speech_style
+        report.applied.append(f"speech_style: {ch.name}")
 
-        for other, rel in ch.relationships.items():
-            current_rel = existing.relationships.get(other)
-            # Relationships are free-text descriptions, not discrete decisions, so an
-            # exact-string mismatch is just a paraphrase, never a real contradiction.
-            # Flagging every wording difference floods conflicts.json (one entry per
-            # episode per pair); instead keep the most informative (longest) description.
-            if rel and len(rel) > len(current_rel or ""):
-                existing.relationships[other] = rel
-                report.applied.append(f"relationship: {ch.name} -> {other}")
+    for other, rel in ch.relationships.items():
+        current_rel = existing.relationships.get(other)
+        # Relationships are free-text descriptions, not discrete decisions, so an
+        # exact-string mismatch is just a paraphrase, never a real contradiction.
+        # Flagging every wording difference floods conflicts.json (one entry per
+        # episode per pair); instead keep the most informative (longest) description.
+        if rel and len(rel) > len(current_rel or ""):
+            existing.relationships[other] = rel
+            report.applied.append(f"relationship: {ch.name} -> {other}")
 
+
+def merge_episode_context(
+    memory: SeriesMemory,
+    glossary: dict[str, str],
+    ctx: EpisodeContext,
+    *,
+    policy: ConflictPolicy = "flag",
+    resolver: ConflictResolver | None = None,
+) -> MergeReport:
+    """Merge `ctx` into `memory`/`glossary` in place; return what happened."""
+    report = MergeReport()
+    _merge_glossary_terms(glossary, ctx, policy, resolver, report)
+    for ch in ctx.characters:
+        _merge_character(memory, ch, policy, resolver, report)
     return report

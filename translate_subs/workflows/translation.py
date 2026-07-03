@@ -21,8 +21,9 @@ from translate_subs.ai.provider import (
     ProviderError,
     is_per_episode_failure,
 )
+from translate_subs.domain.models import TranslatableUnit
 from translate_subs.io.media_probe import MediaToolError
-from translate_subs.io.source_resolver import SourceError
+from translate_subs.io.source_resolver import ResolvedSource, SourceError
 from translate_subs.memory.rules import (
     build_memory_rules,
     memory_prompt_digest,
@@ -98,6 +99,86 @@ def _same_path(a: str | Path, b: str | Path) -> bool:
     return Path(a).resolve() == Path(b).resolve()
 
 
+def _resolve_output_file(
+    source: ResolvedSource,
+    *,
+    output: str | Path | None,
+    out_dir: str | Path | None,
+    fmt: str,
+    target: str,
+) -> Path:
+    """Decide where the translation is written, refusing escapes and source overwrites."""
+    if output is not None:
+        out_file = Path(output).with_suffix(f".{fmt}")
+    else:
+        out_file = output_path(source.origin, fmt=fmt, out_dir=out_dir, lang=lang_code(target))
+        # Defence in depth: the filename is derived from the (now alnum-only) target, so it must
+        # stay a single component inside the intended directory and can't escape via the language.
+        intended = (
+            Path(out_dir).resolve() if out_dir is not None else source.origin.resolve().parent
+        )
+        if out_file.resolve().parent != intended:
+            raise PipelineError(f"Refusing to write outside the output directory: {out_file}.")
+    # Never write over the file we are reading from: a misaimed --output (or a same-name source)
+    # would otherwise destroy the original subtitle, even with --force.
+    if _same_path(out_file, source.subtitle_path) or _same_path(out_file, source.origin):
+        raise PipelineError(
+            f"Refusing to overwrite the source file with the output: {out_file}. "
+            "Choose a different --output/--out-dir or --target."
+        )
+    return out_file
+
+
+def _load_episode_context(
+    project_name: str,
+    target: str,
+    episode_name: str,
+    *,
+    use_context: bool,
+    units: list[TranslatableUnit],
+) -> tuple[EpisodeContext | None, bool, bool]:
+    """Load episode.context.json if wanted and present; returns (context, used, stale)."""
+    if not use_context:
+        return None, False, False
+    episode_context_path = context_path(project_name, target, episode_name)
+    if not episode_context_path.exists():
+        return None, False, False
+    context = EpisodeContext.model_validate_json(episode_context_path.read_text("utf-8"))
+    # Stale means the context was analyzed from a different source than this one: warn, not block.
+    stale = context.source_hash is not None and context.source_hash != source_digest(units)
+    return context, True, stale
+
+
+def _ensure_output_writable(
+    out_file: Path, out_manifest: OutputManifest, out_manifest_path: Path, *, force: bool
+) -> None:
+    """Raise the matching skip/stale/modified error when `out_file` must not be rewritten."""
+    if not out_file.exists() or force:
+        return
+    stored = load_manifest(out_manifest_path)
+    if stored is None and out_manifest_path.exists():
+        # The manifest file exists but is unreadable (corrupt/tampered). We can't confirm the
+        # output is current, so surface it rather than silently skipping it as up to date.
+        raise StaleOutputError(
+            f"Output manifest is unreadable ({out_manifest_path}); cannot verify "
+            f"{out_file} is up to date. Use --force to regenerate it."
+        )
+    if stored is not None:
+        # Protect hand-edits first: if the file changed since we wrote it, never overwrite it
+        # on our own, even if the source also changed.
+        if stored.output_hash and file_digest(out_file) != stored.output_hash:
+            raise ModifiedOutputError(
+                f"Output was edited since it was generated: {out_file}. "
+                "Use --force to overwrite your changes."
+            )
+        if is_stale(stored, out_manifest):
+            raise StaleOutputError(
+                f"Output is stale ({describe_change(stored, out_manifest)} changed since it "
+                f"was written): {out_file}. Use --force to retranslate."
+            )
+    raise OutputExistsError(f"Output already exists: {out_file}. Use --force to overwrite.")
+
+
 def translate_subtitle(
     input_path: str | Path,
     *,
@@ -148,40 +229,15 @@ def translate_subtitle(
     if not units:
         raise PipelineError("No translatable lines found in the subtitle.")
 
-    if output is not None:
-        out_file = Path(output).with_suffix(f".{fmt}")
-    else:
-        out_file = output_path(source.origin, fmt=fmt, out_dir=out_dir, lang=lang_code(target))
-        # Defence in depth: the filename is derived from the (now alnum-only) target, so it must
-        # stay a single component inside the intended directory and can't escape via the language.
-        intended = (
-            Path(out_dir).resolve() if out_dir is not None else source.origin.resolve().parent
-        )
-        if out_file.resolve().parent != intended:
-            raise PipelineError(f"Refusing to write outside the output directory: {out_file}.")
-    # Never write over the file we are reading from: a misaimed --output (or a same-name source)
-    # would otherwise destroy the original subtitle, even with --force.
-    if _same_path(out_file, source.subtitle_path) or _same_path(out_file, source.origin):
-        raise PipelineError(
-            f"Refusing to overwrite the source file with the output: {out_file}. "
-            "Choose a different --output/--out-dir or --target."
-        )
+    out_file = _resolve_output_file(source, output=output, out_dir=out_dir, fmt=fmt, target=target)
     project_name, episode_name = project_episode(source, project)
 
     # Load the steering state before the staleness check so the manifest can fingerprint it: a
     # glossary/character/context edit changes the translation without touching the source.
     project_memory = ProjectMemory.load(memory_root(project_name, target))
-    context_used = False
-    context_stale = False
-    context = None
-    episode_context_path = context_path(project_name, target, episode_name)
-    if use_context and episode_context_path.exists():
-        context = EpisodeContext.model_validate_json(episode_context_path.read_text("utf-8"))
-        context_used = True
-        # Warn (don't block) when the context was analyzed from a different source than this one.
-        context_stale = context.source_hash is not None and context.source_hash != source_digest(
-            units
-        )
+    context, context_used, context_stale = _load_episode_context(
+        project_name, target, episode_name, use_context=use_context, units=units
+    )
 
     base_rules = config.default_rules(target)
     memory_rules = build_memory_rules(project_memory, context)
@@ -222,29 +278,7 @@ def translate_subtitle(
         output=str(out_file.resolve()),
     )
     out_manifest_path = manifest_path(project_name, target, episode_name, out_file)
-    if out_file.exists() and not force:
-        stored = load_manifest(out_manifest_path)
-        if stored is None and out_manifest_path.exists():
-            # The manifest file exists but is unreadable (corrupt/tampered). We can't confirm the
-            # output is current, so surface it rather than silently skipping it as up to date.
-            raise StaleOutputError(
-                f"Output manifest is unreadable ({out_manifest_path}); cannot verify "
-                f"{out_file} is up to date. Use --force to regenerate it."
-            )
-        if stored is not None:
-            # Protect hand-edits first: if the file changed since we wrote it, never overwrite it
-            # on our own, even if the source also changed.
-            if stored.output_hash and file_digest(out_file) != stored.output_hash:
-                raise ModifiedOutputError(
-                    f"Output was edited since it was generated: {out_file}. "
-                    "Use --force to overwrite your changes."
-                )
-            if is_stale(stored, out_manifest):
-                raise StaleOutputError(
-                    f"Output is stale ({describe_change(stored, out_manifest)} changed since it "
-                    f"was written): {out_file}. Use --force to retranslate."
-                )
-        raise OutputExistsError(f"Output already exists: {out_file}. Use --force to overwrite.")
+    _ensure_output_writable(out_file, out_manifest, out_manifest_path, force=force)
 
     def rules_for(lines: list[JobLine]) -> list[str]:
         text = " ".join(line.text for line in lines)

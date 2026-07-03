@@ -6,8 +6,11 @@ import hashlib
 from collections.abc import Callable
 from pathlib import Path
 
+import pysubs2
+
 from translate_subs import config
 from translate_subs.ai.analysis import EpisodeContext, source_digest
+from translate_subs.domain.models import TranslatableUnit
 from translate_subs.memory.store import ProjectMemory, atomic_write_text
 from translate_subs.naming import base_stem, effective_model, validate_target
 from translate_subs.readability.compactor import FlaggedLine, compact_lines
@@ -47,6 +50,78 @@ Runner = Callable[[str], str]  # injected pre-built runner for the review LLM pa
 # replacements and returns whether to write them. None keeps the caller's old behaviour (apply
 # without prompting), so only the CLI, which passes a real gate, prompts for confirmation.
 ApplyConfirm = Callable[[list[tuple[str, str, str]]], bool]
+
+
+def _review_glossary(
+    pm: ProjectMemory,
+    project_name: str,
+    target: str,
+    episode_name: str,
+    units: list[TranslatableUnit],
+) -> tuple[dict[str, str], bool]:
+    """Series glossary overlaid with the episode context's, plus the context-staleness flag."""
+    glossary = dict(pm.glossary)
+    context_stale = False
+    ctx_file = context_path(project_name, target, episode_name)
+    if ctx_file.exists():
+        ctx = EpisodeContext.model_validate_json(ctx_file.read_text("utf-8"))
+        for term, rendering in ctx.glossary.items():
+            glossary.setdefault(term, rendering)
+        context_stale = ctx.source_hash is not None and ctx.source_hash != source_digest(units)
+    return glossary, context_stale
+
+
+def _units_aligned(units: list[TranslatableUnit], target_subs: pysubs2.SSAFile) -> bool:
+    """True when unit ids are unique and each unit's event kept its index and timestamps."""
+    if len({unit.id for unit in units}) != len(units):
+        return False
+    return all(
+        unit.event_index < len(target_subs.events)
+        and abs(unit.start - target_subs.events[unit.event_index].start) <= ALIGN_TOLERANCE_MS
+        and abs(unit.end - target_subs.events[unit.event_index].end) <= ALIGN_TOLERANCE_MS
+        for unit in units
+    )
+
+
+def _plan_safe_fixes(
+    auto_fixes: list[Finding],
+    index_by_id: dict[str, int],
+    target_subs: pysubs2.SSAFile,
+) -> list[tuple[str, str, str]]:
+    """Select the (id, before, after) replacements that are safe to write back.
+
+    Each safe fix is a whole-line replacement, so two fixes on the same line would clobber each
+    other (last wins, the first silently lost): when a line has more than one distinct suggestion,
+    none is applied and the line is left for a human.
+    """
+    suggestions_by_id: dict[str, set[str]] = {}
+    for fix in auto_fixes:
+        if fix.id is not None and fix.suggested is not None:
+            suggestions_by_id.setdefault(fix.id, set()).add(fix.suggested)
+    planned: list[tuple[str, str, str]] = []
+    seen_ids: set[str] = set()
+    for fix in auto_fixes:
+        index = index_by_id.get(fix.id or "")
+        if (
+            index is None
+            or fix.suggested is None
+            or fix.id in seen_ids
+            or len(suggestions_by_id.get(fix.id or "", set())) != 1
+        ):
+            continue
+        actual_text = target_subs.events[index].plaintext
+        # Skip fixes where the translated text changed since the review was generated:
+        # applying a fix derived from stale context could corrupt a line edited by hand.
+        if fix.current is not None and actual_text != fix.current:
+            continue
+        # A term-level fix (glossary/name/honorific) must change one contiguous span, not
+        # reword the line. If the suggestion also rewrote surrounding text, reject it and
+        # leave the line for a human instead of overwriting it wholesale.
+        if fix.kind in TERM_FIX_KINDS and not is_single_span_edit(actual_text, fix.suggested):
+            continue
+        planned.append((fix.id or "", actual_text, fix.suggested))
+        seen_ids.add(fix.id or "")
+    return planned
 
 
 def review_translation(
@@ -128,14 +203,7 @@ def review_translation(
 
     project_name, episode_name = project_episode(source, project)
     pm = ProjectMemory.load(memory_root(project_name, target))
-    glossary = dict(pm.glossary)
-    context_stale = False
-    ctx_file = context_path(project_name, target, episode_name)
-    if ctx_file.exists():
-        ctx = EpisodeContext.model_validate_json(ctx_file.read_text("utf-8"))
-        for term, rendering in ctx.glossary.items():
-            glossary.setdefault(term, rendering)
-        context_stale = ctx.source_hash is not None and ctx.source_hash != source_digest(units)
+    glossary, context_stale = _review_glossary(pm, project_name, target, episode_name, units)
     confirmed: dict[str, str] = {
         character.name: character.gender
         for character in pm.memory.characters
@@ -164,12 +232,7 @@ def review_translation(
 
     report = ReviewReport(episode=episode_name, findings=findings)
 
-    aligned = len({unit.id for unit in units}) == len(units) and all(
-        unit.event_index < len(target_subs.events)
-        and abs(unit.start - target_subs.events[unit.event_index].start) <= ALIGN_TOLERANCE_MS
-        and abs(unit.end - target_subs.events[unit.event_index].end) <= ALIGN_TOLERANCE_MS
-        for unit in units
-    )
+    aligned = _units_aligned(units, target_subs)
     n_applied = 0
     auto_fixes = report.auto_fixes()
     planned_fixes: list[tuple[str, str, str]] = []
@@ -177,36 +240,7 @@ def review_translation(
 
     if auto_fixes and aligned:
         index_by_id = {line.id: line.event_index for line in lines}
-        # Each safe fix is a whole-line replacement, so two fixes on the same line would clobber
-        # each other (last wins, the first silently lost). When a line has more than one distinct
-        # suggestion, apply none of them and leave it for a human.
-        suggestions_by_id: dict[str, set[str]] = {}
-        for fix in auto_fixes:
-            if fix.id is not None and fix.suggested is not None:
-                suggestions_by_id.setdefault(fix.id, set()).add(fix.suggested)
-        seen_ids: set[str] = set()
-        for fix in auto_fixes:
-            index = index_by_id.get(fix.id or "")
-            if (
-                index is not None
-                and fix.suggested is not None
-                and fix.id not in seen_ids
-                and len(suggestions_by_id.get(fix.id or "", set())) == 1
-            ):
-                actual_text = target_subs.events[index].plaintext
-                # Skip fixes where the translated text changed since the review was generated:
-                # applying a fix derived from stale context could corrupt a line edited by hand.
-                if fix.current is not None and actual_text != fix.current:
-                    continue
-                # A term-level fix (glossary/name/honorific) must change one contiguous span, not
-                # reword the line. If the suggestion also rewrote surrounding text, reject it and
-                # leave the line for a human instead of overwriting it wholesale.
-                if fix.kind in TERM_FIX_KINDS and not is_single_span_edit(
-                    actual_text, fix.suggested
-                ):
-                    continue
-                planned_fixes.append((fix.id or "", actual_text, fix.suggested))
-                seen_ids.add(fix.id or "")
+        planned_fixes = _plan_safe_fixes(auto_fixes, index_by_id, target_subs)
         if apply and planned_fixes and (confirm is None or confirm(planned_fixes)):
             for fix_id, old_text, new_text in planned_fixes:
                 replace_visible_text(target_subs.events[index_by_id[fix_id]], new_text)
@@ -254,6 +288,70 @@ def review_translation(
     )
 
 
+def _flag_over_limit_lines(subs: pysubs2.SSAFile, limits: ReadabilityLimits) -> list[FlaggedLine]:
+    """Measure every translatable line and flag the ones exceeding the readability limits."""
+    flagged: list[FlaggedLine] = []
+    for index, event in enumerate(subs.events):
+        if not is_translatable(event):
+            continue
+        metrics = measure(event.plaintext, event.start, event.end)
+        reasons = exceeds(metrics, limits)
+        if reasons:
+            flagged.append(
+                FlaggedLine(
+                    id=f"{index + 1:04d}",
+                    event_index=index,
+                    text=event.plaintext,
+                    metrics=metrics,
+                    reasons=reasons,
+                )
+            )
+    return flagged
+
+
+def _plan_compactions(
+    flagged: list[FlaggedLine],
+    compactions: dict[str, str],
+    subs: pysubs2.SSAFile,
+    limits: ReadabilityLimits,
+) -> tuple[list[ReadabilityEntry], list[tuple[int, str, str, str]], int]:
+    """Build the report entries and the (event_index, id, before, after) compactions to write.
+
+    Collected before any write so the CLI can show the diff and confirm first. Only a compaction
+    that actually helps is planned: a candidate that adds a new kind of violation or grows the
+    text is kept out of the file (reported as rejected, not applied). Returns the entries, the
+    planned replacements, and how many planned lines remain over the limits.
+    """
+    entries: list[ReadabilityEntry] = []
+    planned: list[tuple[int, str, str, str]] = []
+    n_residual = 0
+    for line in flagged:
+        compact = compactions.get(line.id)
+        residual: list[str] = []
+        rejected = False
+        if compact is not None:
+            event = subs.events[line.event_index]
+            new_metrics = measure(compact, event.start, event.end)
+            residual = exceeds(new_metrics, limits)
+            improved = is_safe_improvement(line.metrics, new_metrics, limits)
+            rejected = not improved
+            if improved:
+                planned.append((line.event_index, line.id, line.text, compact))
+                if residual:
+                    n_residual += 1
+        entries.append(
+            ReadabilityEntry(
+                id=line.id,
+                reasons=line.reasons,
+                current=line.text,
+                compact=compact,
+                residual=residual,
+                rejected=rejected,
+            )
+        )
+    return entries, planned, n_residual
+
+
 def tighten_subtitle(
     translated_path: str | Path,
     *,
@@ -281,23 +379,7 @@ def tighten_subtitle(
     if not translated_path.exists():
         raise PipelineError(f"Translated file not found: {translated_path}")
     subs = document.load(translated_path, encoding=encoding)
-
-    flagged: list[FlaggedLine] = []
-    for index, event in enumerate(subs.events):
-        if not is_translatable(event):
-            continue
-        metrics = measure(event.plaintext, event.start, event.end)
-        reasons = exceeds(metrics, limits)
-        if reasons:
-            flagged.append(
-                FlaggedLine(
-                    id=f"{index + 1:04d}",
-                    event_index=index,
-                    text=event.plaintext,
-                    metrics=metrics,
-                    reasons=reasons,
-                )
-            )
+    flagged = _flag_over_limit_lines(subs, limits)
 
     compactions: dict[str, str] = {}
     if use_llm and flagged:
@@ -308,39 +390,9 @@ def tighten_subtitle(
             max_retries=max_retries,
         )
 
-    entries: list[ReadabilityEntry] = []
+    entries, planned, n_residual = _plan_compactions(flagged, compactions, subs, limits)
     n_applied = 0
-    n_residual = 0
     applied_compactions: list[tuple[str, str, str]] = []
-    # (event_index, id, before, after) for the compactions that would be written. Collected first
-    # so the CLI can show the diff and confirm before any line is overwritten.
-    planned: list[tuple[int, str, str, str]] = []
-    for line in flagged:
-        compact = compactions.get(line.id)
-        residual: list[str] = []
-        rejected = False
-        if compact is not None:
-            event = subs.events[line.event_index]
-            new_metrics = measure(compact, event.start, event.end)
-            residual = exceeds(new_metrics, limits)
-            # Only write a compaction that actually helps: a candidate that adds a new kind of
-            # violation or grows the text is kept out of the file (reported, not applied).
-            improved = is_safe_improvement(line.metrics, new_metrics, limits)
-            rejected = not improved
-            if improved:
-                planned.append((line.event_index, line.id, line.text, compact))
-                if residual:
-                    n_residual += 1
-        entries.append(
-            ReadabilityEntry(
-                id=line.id,
-                reasons=line.reasons,
-                current=line.text,
-                compact=compact,
-                residual=residual,
-                rejected=rejected,
-            )
-        )
 
     proceed = apply and bool(planned)
     if proceed and confirm is not None:

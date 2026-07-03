@@ -75,16 +75,43 @@ def _writable_dir(label: str, path: Path) -> Check:
 
 
 def _loose_entries(root: Path) -> list[Path]:
-    """Paths under `root` (including `root`) still readable/traversable by group or other."""
+    """Paths under `root` (including `root`) still readable/traversable by group or other.
+
+    Symlinks are skipped: their own mode is fixed (0o777 on Linux) and not chmod-able, so they
+    would be flagged forever and `--fix` could never converge; a target that lives under the
+    root is audited as its own entry, and one outside it is not this tool's state.
+    """
     loose: list[Path] = []
     for path in (root, *root.rglob("*")) if root.exists() else ():
         try:
+            if path.is_symlink():
+                continue
             mode = path.lstat().st_mode
         except OSError:
             continue
         if mode & 0o077:
             loose.append(path)
     return loose
+
+
+def fix_permissions() -> tuple[int, list[str]]:
+    """Tighten group/other-accessible state/cache entries to owner-only (`doctor --fix`).
+
+    Covers exactly the subtrees `_permissions_check` audits (PROJECTS_DIR and WORK_DIR — private
+    state that may carry subtitle text), so a fixed run turns that check green. Returns the
+    number of entries fixed and any per-entry errors (the fix keeps going past an unfixable
+    entry).
+    """
+    fixed = 0
+    errors: list[str] = []
+    for path in _loose_entries(config.PROJECTS_DIR) + _loose_entries(config.WORK_DIR):
+        try:
+            path.chmod(path.lstat().st_mode & ~0o077)
+        except OSError as exc:
+            errors.append(f"{path}: {exc}")
+        else:
+            fixed += 1
+    return fixed, errors
 
 
 def _permissions_check() -> Check:
@@ -101,7 +128,8 @@ def _permissions_check() -> Check:
         "warn",
         f"{len(loose)} state/cache entries are group/other-accessible and may carry subtitle "
         f"text. Current versions write these owner-only; files from an older release keep their "
-        f"old mode. Fix: chmod -R go= {config.PROJECTS_DIR} {config.WORK_DIR}. e.g. {sample}{more}",
+        f"old mode. Fix: run `llm-subs doctor --fix` (or chmod -R go= {config.PROJECTS_DIR} "
+        f"{config.WORK_DIR}). e.g. {sample}{more}",
     )
 
 

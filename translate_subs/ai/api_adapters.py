@@ -23,6 +23,10 @@ from translate_subs.ai.provider import ErrorCategory, ProviderError, backend_err
 
 _DEFAULT_OLLAMA_HOST = "http://localhost:11434"
 _RETRYABLE_HTTP_STATUSES = {408, 409, 425, 429, 500, 502, 503, 504}
+# Upper bound on a backend HTTP response body. A model reply for one block is a few kilobytes;
+# without a cap, a broken/misbehaving server that streams forever would be buffered whole into
+# memory. Generous enough for any legitimate reply (a full episode is well under 1 MiB).
+_MAX_RESPONSE_BYTES = 32 * 1024 * 1024
 
 
 def _retry_after_seconds(value: str | None) -> float | None:
@@ -42,7 +46,15 @@ def _post_json(url: str, payload: dict[str, Any], timeout: int) -> dict[str, Any
     req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
-            raw = resp.read().decode("utf-8")
+            body = resp.read(_MAX_RESPONSE_BYTES + 1)
+            if len(body) > _MAX_RESPONSE_BYTES:
+                # Not retryable: the same request would stream the same oversized reply again.
+                raise ProviderError(
+                    f"Response from {url} exceeded {_MAX_RESPONSE_BYTES // (1024 * 1024)} MiB; "
+                    "refusing to buffer it.",
+                    category="content",
+                )
+            raw = body.decode("utf-8")
     except urllib.error.HTTPError as exc:
         retryable = exc.code in _RETRYABLE_HTTP_STATUSES or 500 <= exc.code < 600
         retry_after = _retry_after_seconds(

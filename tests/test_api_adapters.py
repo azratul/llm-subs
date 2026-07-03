@@ -31,6 +31,26 @@ def test_ollama_builds_chat_request(monkeypatch):
     assert payload["messages"][0]["content"] == "PROMPT"
 
 
+def test_post_json_rejects_oversized_response(monkeypatch):
+    """A broken server streaming an endless body must not be buffered whole into memory."""
+
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def read(self, limit):
+            return b"x" * limit  # always fills the cap, i.e. the body is larger than allowed
+
+    monkeypatch.setattr(api_adapters.urllib.request, "urlopen", lambda req, timeout: FakeResponse())
+    with pytest.raises(ProviderError, match="exceeded") as exc_info:
+        api_adapters._post_json("http://localhost:11434/api/chat", {}, timeout=5)
+    assert exc_info.value.category == "content"
+    assert not exc_info.value.retryable
+
+
 def test_ollama_can_omit_think(monkeypatch):
     captured = {}
 

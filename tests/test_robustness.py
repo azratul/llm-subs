@@ -105,6 +105,42 @@ def test_doctor_flags_group_readable_state(tmp_path, monkeypatch):
     flagged = diagnostics._permissions_check()
     assert flagged.status == "warn"
     assert str(legacy) in flagged.detail
+    assert "doctor --fix" in flagged.detail
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX file permissions only")
+def test_doctor_fix_permissions_tightens_state_to_owner_only(tmp_path, monkeypatch):
+    import stat
+
+    from translate_subs import diagnostics
+
+    projects = tmp_path / "projects"
+    work = tmp_path / "cache"
+    projects.mkdir(mode=0o700)
+    work.mkdir(mode=0o700)
+    monkeypatch.setattr(diagnostics.config, "PROJECTS_DIR", projects)
+    monkeypatch.setattr(diagnostics.config, "WORK_DIR", work)
+
+    legacy_dir = projects / "Serie" / "es-latam"
+    legacy_dir.mkdir(parents=True)
+    legacy_dir.chmod(0o755)
+    legacy = legacy_dir / "memory.json"
+    legacy.write_text("subtitle text", encoding="utf-8")
+    legacy.chmod(0o644)
+    # A symlink to a file outside the state dirs must not have its target chmod-ed.
+    outside = tmp_path / "outside.txt"
+    outside.write_text("not our state", encoding="utf-8")
+    outside.chmod(0o644)
+    (work / "link").symlink_to(outside)
+
+    fixed, errors = diagnostics.fix_permissions()
+
+    assert errors == []
+    assert fixed >= 2
+    assert stat.S_IMODE(legacy.lstat().st_mode) == 0o600
+    assert stat.S_IMODE(legacy_dir.lstat().st_mode) == 0o700
+    assert stat.S_IMODE(outside.lstat().st_mode) == 0o644
+    assert diagnostics._permissions_check().status == "ok"
 
 
 # --- path traversal on --project -----------------------------------------------------
@@ -1999,6 +2035,41 @@ def test_parallel_translate_propagates_block_error(tmp_path):
 
     with pytest.raises(ProviderError, match="backend down"):
         translate_with_checkpoint(_FailingProvider(), jobs, checkpoint=cp, parallel=2)
+
+
+def test_parallel_failure_surfaces_without_waiting_for_inflight_blocks(tmp_path):
+    """A failed block raises immediately; the pool must not drain in-flight blocks first.
+
+    With the old `with ThreadPoolExecutor(...)` the implicit shutdown(wait=True) sat silent
+    until every running block finished — up to the per-block timeout (600s) — before the user
+    saw the error or the Ctrl-C took effect.
+    """
+    import threading
+    import time as time_mod
+
+    from translate_subs.ai.checkpoint import BlockCheckpoint, translate_with_checkpoint
+    from translate_subs.ai.provider import ProviderError
+
+    release = threading.Event()
+
+    class _OneFailsOneHangs:
+        def translate_block(self, job):
+            if job.block_id == "0001":
+                raise ProviderError("backend down", retryable=False)
+            release.wait(timeout=5)  # simulates an in-flight HTTP call that can't be interrupted
+            return {line.id: line.text for line in job.translate}, []
+
+    jobs = [_job("0001", [("0001", "x")]), _job("0002", [("0002", "y")])]
+    cp = BlockCheckpoint(tmp_path / "cp.json", signature="ollama|")
+
+    start = time_mod.perf_counter()
+    try:
+        with pytest.raises(ProviderError, match="backend down"):
+            translate_with_checkpoint(_OneFailsOneHangs(), jobs, checkpoint=cp, parallel=2)
+        elapsed = time_mod.perf_counter() - start
+    finally:
+        release.set()  # let the background thread finish so pytest teardown isn't delayed
+    assert elapsed < 2.0, f"error was held back {elapsed:.1f}s by in-flight blocks"
 
 
 def test_parallel_provider_falls_back_to_sequential_without_translate_block(tmp_path):

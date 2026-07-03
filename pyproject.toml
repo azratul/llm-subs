@@ -76,7 +76,12 @@ line-length = 100
 target-version = "py311"
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B"]
+select = ["E", "F", "I", "UP", "B", "C901"]
+
+[tool.ruff.lint.mccabe]
+# Complexity ceiling (ratchet): the worst offenders were split into pure steps to get under it.
+# Lower it as further refactors land; never raise it to accommodate new code.
+max-complexity = 12
 
 [tool.ruff.lint.per-file-ignores]
 # Typer relies on function-call defaults (Argument/Option), and the CLI deliberately

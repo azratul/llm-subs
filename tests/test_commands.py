@@ -86,6 +86,42 @@ def test_doctor_command_exit_codes(monkeypatch):
     assert runner.invoke(app, ["doctor"]).exit_code == 1
 
 
+def test_doctor_fix_repairs_then_checks(monkeypatch):
+    monkeypatch.setattr(
+        system_cmd, "run_diagnostics", lambda provider=None, model=None: [Check("x", "ok", "")]
+    )
+    monkeypatch.setattr(system_cmd, "fix_permissions", lambda: (3, []))
+    out = runner.invoke(app, ["doctor", "--fix"])
+    assert out.exit_code == 0
+    assert "Fixed 3 state/cache entries" in out.stdout
+
+    # Without --fix nothing is repaired.
+    called: list[int] = []
+    monkeypatch.setattr(system_cmd, "fix_permissions", lambda: called.append(1) or (0, []))
+    assert runner.invoke(app, ["doctor"]).exit_code == 0
+    assert not called
+
+
+def test_doctor_fix_json_reports_repairs_and_errors(monkeypatch):
+    import json
+
+    monkeypatch.setattr(
+        system_cmd, "run_diagnostics", lambda provider=None, model=None: [Check("x", "ok", "")]
+    )
+    monkeypatch.setattr(
+        system_cmd, "fix_permissions", lambda: (2, ["/state/stuck.json: Operation not permitted"])
+    )
+    out = runner.invoke(app, ["doctor", "--fix", "--json"])
+    assert out.exit_code == 0
+    payload = json.loads(out.stdout)
+    assert payload["fixed_permissions"] == 2
+    assert payload["fix_errors"] == ["/state/stuck.json: Operation not permitted"]
+
+    # Without --fix the JSON document keeps its original shape.
+    plain = json.loads(runner.invoke(app, ["doctor", "--json"]).stdout)
+    assert "fixed_permissions" not in plain
+
+
 def test_probe_command_lists_tracks_and_handles_none(monkeypatch):
     monkeypatch.setattr(system_cmd, "probe_subtitle_tracks", lambda media: [])
     empty = runner.invoke(app, ["probe", "movie.mkv"])

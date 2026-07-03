@@ -402,7 +402,7 @@ written as UTF-8.
 | `resolve-conflicts <project>` | Walks flagged `conflicts.json` entries interactively (keep stored / use suggested / skip). |
 | `project-status <project>` | Shows a project's stored state for a target: glossary/character/conflict counts, and per-episode whether it was analyzed, whether a checkpoint file is present, and which output paths are tracked (no LLM call). |
 | `validate <subtitle>` | Structural validation (parseable, timings, no leftover markup). |
-| `doctor [--provider <name>]` | Checks the environment: media tools (ffprobe/ffmpeg), writable data/cache dirs, and — with `--provider` — that provider's backend (CLI on PATH, reachable Ollama server, or installed litellm). |
+| `doctor [--provider <name>] [--fix]` | Checks the environment: media tools (ffprobe/ffmpeg), writable data/cache dirs, owner-only state permissions, and — with `--provider` — that provider's backend (CLI on PATH, reachable Ollama server, or installed litellm). `--fix` repairs what it can: state/cache files left group/other-readable by an older release are tightened to owner-only. |
 | `purge-cache` | Deletes the cache of subtitle tracks extracted from containers (`$XDG_CACHE_HOME/llm-subs/work`). Series memory and reports are not touched. |
 
 ### Providers (`--provider`)

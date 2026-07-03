@@ -7,6 +7,16 @@ All notable changes to this project are documented here. The format follows
 ## [Unreleased]
 
 ### Fixed
+- **A parallel-translation failure (or Ctrl-C) surfaces immediately.** The thread pool's implicit
+  `shutdown(wait=True)` sat silent until every in-flight block finished — up to the per-block
+  timeout (600s) — before the error or the interrupt reached the user. The pool now cancels the
+  not-yet-started blocks and stops waiting; an in-flight HTTP call can't be interrupted
+  mid-request, so it finishes in a background thread and still persists its block to the
+  checkpoint for the next resume.
+- **Backend HTTP responses are size-capped (32 MiB).** The Ollama client buffered the whole
+  response body unbounded, so a broken or misbehaving server that streams forever could consume
+  arbitrary memory. Oversized replies now fail fast as a content fault (not retryable — the same
+  request would stream the same oversized reply again).
 - **`batch --pre-analyze` now honours `--strict-lang`.** The flag reached the translate pass but
   not the analysis pass, so a wrong-language source (e.g. the only embedded track is Spanish when
   `--lang en` was requested) would have its characters and glossary merged into the shared series
@@ -24,6 +34,12 @@ All notable changes to this project are documented here. The format follows
   stale once (regenerate with `--force`).
 
 ### Added
+- **`doctor --fix`**: repair what `doctor` can instead of only printing a `chmod` to run by hand.
+  State/cache entries left group/other-readable by an older release (they may carry subtitle text)
+  are tightened to owner-only; the fix runs before the checks, so the permissions check reports the
+  post-fix state, and `--json` gains `fixed_permissions`/`fix_errors` fields. Symlinks are skipped
+  (their own mode is fixed and chmod would follow them outside the state dirs) — they are no longer
+  flagged by the permissions audit either, since they could never be "fixed".
 - **Automatic input-encoding detection** with a `--encoding` override. Subtitle sidecars are
   frequently CP1252 (Western), Shift-JIS (Japanese `.srt`) or UTF-16, which pysubs2's UTF-8 default
   turned into mojibake or a hard parse error. `translate`, `batch`, `analyze`, `review`, `tighten`
@@ -74,6 +90,14 @@ All notable changes to this project are documented here. The format follows
   fingerprint alone.
 
 ### Changed
+- **Complexity gate.** The ten most complex functions (`batch`, `translate_subtitle`,
+  `translation_rules`, `review_translation`, `translate_with_checkpoint`, `translate`,
+  `tighten_subtitle`, `pair_lines`, `select_track`, `merge_episode_context`) were split into
+  smaller pure steps — output-path resolution, staleness gating, context loading, safe-fix and
+  compaction planning, sequential/parallel block translation, pairing modes, phase/report
+  printing — with no behaviour change, and ruff now enforces a cyclomatic-complexity ceiling
+  (`C901`, `max-complexity = 12`) in lint/CI as a ratchet: lower it as further refactors land,
+  never raise it to accommodate new code.
 - **CI covers the dependency promises.** The audit job now syncs `--all-extras`, so `pip-audit`
   covers litellm's dependency tree instead of only the core install, and a new `minimum-versions`
   job resolves every direct dependency to its lowest declared version (`--resolution

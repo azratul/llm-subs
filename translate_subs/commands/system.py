@@ -11,7 +11,7 @@ import typer
 from rich.table import Table
 
 from translate_subs import config
-from translate_subs.diagnostics import run_diagnostics
+from translate_subs.diagnostics import fix_permissions, run_diagnostics
 from translate_subs.io.media_probe import probe_subtitle_tracks
 
 
@@ -83,23 +83,39 @@ def doctor(
         help="With --provider ollama, also verify this model is installed on the server.",
     ),
     json_out: bool = typer.Option(False, "--json", help="Emit results as JSON instead of a table."),
+    fix: bool = typer.Option(
+        False,
+        "--fix",
+        help="Repair what doctor can: tighten group/other-accessible state/cache "
+        "files (e.g. written by an older release) to owner-only before checking.",
+    ),
 ) -> None:
     """Check the environment: media tools, writable data/cache dirs, optional provider."""
     runtime = _runtime()
+    fixed = 0
+    fix_errors: list[str] = []
+    if fix:
+        # Repair before diagnosing, so the permissions check reports the post-fix state.
+        fixed, fix_errors = fix_permissions()
     checks = run_diagnostics(provider, model)
     failed = any(check.status == "fail" for check in checks)
     if json_out:
-        _emit_json(
-            {
-                "ok": not failed,
-                "checks": [
-                    {"name": c.name, "status": c.status, "detail": c.detail} for c in checks
-                ],
-            }
-        )
+        payload: dict[str, Any] = {
+            "ok": not failed,
+            "checks": [{"name": c.name, "status": c.status, "detail": c.detail} for c in checks],
+        }
+        if fix:
+            payload["fixed_permissions"] = fixed
+            payload["fix_errors"] = fix_errors
+        _emit_json(payload)
         if failed:
             raise typer.Exit(code=1)
         return
+    if fix:
+        if fixed:
+            runtime.console.print(f"Fixed {fixed} state/cache entr{'y' if fixed == 1 else 'ies'}.")
+        for error in fix_errors:
+            runtime.console.print(f"[yellow]Could not fix:[/yellow] {error}")
     table = Table(title="llm-subs doctor")
     for col in ("check", "status", "detail"):
         table.add_column(col)

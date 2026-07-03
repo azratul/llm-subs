@@ -149,6 +149,108 @@ def _is_valid_cached(cached: _Entry, job: TranslationJobIn) -> bool:
     )
 
 
+def _reusable_entry(checkpoint: BlockCheckpoint, h: str, job: TranslationJobIn) -> _Entry | None:
+    """Return the cached entry for `job` if it is still valid; drop it from the file otherwise.
+
+    A structurally valid checkpoint can still contain a stale/mismatched entry: drop only that
+    entry and let the caller regenerate the block instead of failing the whole translation.
+    """
+    cached = checkpoint.entries.get(h)
+    if cached is None:
+        return None
+    if _is_valid_cached(cached, job):
+        return cached
+    checkpoint.entries.pop(h, None)
+    return None
+
+
+def _translate_sequential(
+    provider: TranslationProvider,
+    jobs: list[TranslationJobIn],
+    checkpoint: BlockCheckpoint,
+    on_progress: Callable[[BlockProgress], None] | None,
+) -> tuple[dict[str, str], list[str]]:
+    translations: dict[str, str] = {}
+    untranslated: list[str] = []
+    total = len(jobs)
+    for i, job in enumerate(jobs, start=1):
+        h = block_hash(job)
+        cached = _reusable_entry(checkpoint, h, job)
+        if cached is not None:
+            translations.update(cached.translations)
+            untranslated.extend(cached.untranslated)
+            if on_progress:
+                on_progress(BlockProgress(i, total, job.block_id, reused=True))
+            continue
+        block_map = provider.translate([job])
+        block_untranslated = list(getattr(provider, "untranslated_ids", []))
+        checkpoint.save_entry(h, _Entry(job.block_id, dict(block_map), block_untranslated))
+        translations.update(block_map)
+        untranslated.extend(block_untranslated)
+        if on_progress:
+            on_progress(BlockProgress(i, total, job.block_id, reused=False))
+    return translations, untranslated
+
+
+def _translate_parallel(
+    translate_block: Callable[[TranslationJobIn], tuple[dict[str, str], list[str]]],
+    jobs: list[TranslationJobIn],
+    checkpoint: BlockCheckpoint,
+    on_progress: Callable[[BlockProgress], None] | None,
+    parallel: int,
+) -> tuple[dict[str, str], list[str]]:
+    """Serve cache hits first, then translate the misses concurrently in a thread pool."""
+    translations: dict[str, str] = {}
+    untranslated: list[str] = []
+    total = len(jobs)
+    pending: list[TranslationJobIn] = []
+    done = 0
+    for job in jobs:
+        cached = _reusable_entry(checkpoint, block_hash(job), job)
+        if cached is not None:
+            translations.update(cached.translations)
+            untranslated.extend(cached.untranslated)
+            done += 1
+            if on_progress:
+                on_progress(BlockProgress(done, total, job.block_id, reused=True))
+            continue
+        pending.append(job)
+
+    if not pending:
+        return translations, untranslated
+
+    progress_lock = threading.Lock()
+
+    def _do_block(job: TranslationJobIn) -> tuple[str, str, dict[str, str], list[str]]:
+        h = block_hash(job)
+        block_translations, block_untranslated = translate_block(job)
+        checkpoint.save_entry(h, _Entry(job.block_id, dict(block_translations), block_untranslated))
+        return job.block_id, h, block_translations, block_untranslated
+
+    executor = ThreadPoolExecutor(max_workers=parallel)
+    try:
+        futures = [executor.submit(_do_block, job) for job in pending]
+        for future in as_completed(futures):
+            block_id, _h, block_translations, block_untranslated = future.result()
+            translations.update(block_translations)
+            untranslated.extend(block_untranslated)
+            with progress_lock:
+                done += 1
+                if on_progress:
+                    on_progress(BlockProgress(done, total, block_id, reused=False))
+    except BaseException:
+        # On the first failed block (or Ctrl-C), surface the error NOW: cancel the blocks not
+        # yet started and do not wait for the in-flight ones — a `with` block
+        # (shutdown(wait=True)) would sit silent for up to the per-block timeout before the
+        # user sees anything. An in-flight HTTP call can't be interrupted mid-request; it
+        # finishes in a background thread and still persists its block via save_entry, so
+        # nothing is lost for the resume.
+        executor.shutdown(wait=False, cancel_futures=True)
+        raise
+    executor.shutdown()
+    return translations, untranslated
+
+
 def translate_with_checkpoint(
     provider: TranslationProvider,
     jobs: list[TranslationJobIn],
@@ -170,80 +272,8 @@ def translate_with_checkpoint(
     to the checkpoint under a lock as each block finishes. Suitable for API-backed runners
     (Ollama, LiteLLM) where the bottleneck is network/model latency, not subprocess overhead.
     """
-    translations: dict[str, str] = {}
-    untranslated: list[str] = []
-    total = len(jobs)
-
     translate_block = getattr(provider, "translate_block", None)
     if parallel <= 1 or translate_block is None:
         # Sequential path: original behaviour, also handles providers without translate_block.
-        for i, job in enumerate(jobs, start=1):
-            h = block_hash(job)
-            cached = checkpoint.entries.get(h)
-            if cached is not None:
-                if _is_valid_cached(cached, job):
-                    translations.update(cached.translations)
-                    untranslated.extend(cached.untranslated)
-                    if on_progress:
-                        on_progress(BlockProgress(i, total, job.block_id, reused=True))
-                    continue
-                # A structurally valid file can still contain a stale/mismatched entry. Drop only
-                # that entry and regenerate the block instead of failing the whole translation.
-                checkpoint.entries.pop(h, None)
-            block_map = provider.translate([job])
-            block_untranslated = list(getattr(provider, "untranslated_ids", []))
-            checkpoint.save_entry(h, _Entry(job.block_id, dict(block_map), block_untranslated))
-            translations.update(block_map)
-            untranslated.extend(block_untranslated)
-            if on_progress:
-                on_progress(BlockProgress(i, total, job.block_id, reused=False))
-        return translations, untranslated
-
-    # Parallel path: serve cache hits, then translate misses concurrently.
-    pending: list[TranslationJobIn] = []
-    done = 0
-    for job in jobs:
-        h = block_hash(job)
-        cached = checkpoint.entries.get(h)
-        if cached is not None:
-            if _is_valid_cached(cached, job):
-                translations.update(cached.translations)
-                untranslated.extend(cached.untranslated)
-                done += 1
-                if on_progress:
-                    on_progress(BlockProgress(done, total, job.block_id, reused=True))
-                continue
-            checkpoint.entries.pop(h, None)
-        pending.append(job)
-
-    if not pending:
-        return translations, untranslated
-
-    progress_lock = threading.Lock()
-
-    def _do_block(job: TranslationJobIn) -> tuple[str, str, dict[str, str], list[str]]:
-        h = block_hash(job)
-        block_translations, block_untranslated = translate_block(job)
-        checkpoint.save_entry(h, _Entry(job.block_id, dict(block_translations), block_untranslated))
-        return job.block_id, h, block_translations, block_untranslated
-
-    with ThreadPoolExecutor(max_workers=parallel) as executor:
-        futures = [executor.submit(_do_block, job) for job in pending]
-        try:
-            for future in as_completed(futures):
-                block_id, _h, block_translations, block_untranslated = future.result()
-                translations.update(block_translations)
-                untranslated.extend(block_untranslated)
-                with progress_lock:
-                    done += 1
-                    if on_progress:
-                        on_progress(BlockProgress(done, total, block_id, reused=False))
-        except BaseException:
-            # On the first failed block (or Ctrl-C), cancel blocks not yet started so we stop
-            # spending provider calls instead of waiting for the whole pool to drain. Already
-            # completed blocks are persisted in the checkpoint and resume on the next run.
-            for f in futures:
-                f.cancel()
-            raise
-
-    return translations, untranslated
+        return _translate_sequential(provider, jobs, checkpoint, on_progress)
+    return _translate_parallel(translate_block, jobs, checkpoint, on_progress, parallel)

@@ -214,6 +214,27 @@ def _find_sidecar(media: Path, lang: str | None = None) -> Path | None:
     return others[0] if others else None
 
 
+def _prompt_for_track(
+    text_tracks: list[SubtitleTrack], prompt: Callable[[str], str]
+) -> SubtitleTrack:
+    """List the candidate tracks and let the user type the index to extract."""
+    for t in text_tracks:
+        label = f"  [{t.rel_index}] {t.codec} lang={t.language or '?'}"
+        if t.title:
+            label += f" '{t.title}'"
+        if t.default:
+            label += " (default)"
+        if t.forced:
+            label += " (forced)"
+        print(label)
+    raw = prompt("Track to extract [index]: ").strip()
+    try:
+        chosen = int(raw)
+    except ValueError as exc:
+        raise SourceError(f"Not a track index: {raw!r}. Enter one of the numbers listed.") from exc
+    return select_track(text_tracks, lang=None, track_index=chosen, interactive=False)
+
+
 def select_track(
     tracks: list[SubtitleTrack],
     *,
@@ -241,23 +262,7 @@ def select_track(
         return text_tracks[0]
 
     if interactive:
-        for t in text_tracks:
-            label = f"  [{t.rel_index}] {t.codec} lang={t.language or '?'}"
-            if t.title:
-                label += f" '{t.title}'"
-            if t.default:
-                label += " (default)"
-            if t.forced:
-                label += " (forced)"
-            print(label)
-        raw = prompt("Track to extract [index]: ").strip()
-        try:
-            chosen = int(raw)
-        except ValueError as exc:
-            raise SourceError(
-                f"Not a track index: {raw!r}. Enter one of the numbers listed."
-            ) from exc
-        return select_track(text_tracks, lang=None, track_index=chosen, interactive=False)
+        return _prompt_for_track(text_tracks, prompt)
 
     # Non-interactive heuristic: rank by exact language match, full track over forced,
     # plain over SDH/HI, then the default flag. Ties keep container order (stable max).
