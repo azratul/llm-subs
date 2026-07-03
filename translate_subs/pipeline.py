@@ -136,6 +136,8 @@ def analyze_subtitle(
     reasoning: str | None = None,
     max_retries: int = 2,
     skip_if_current: bool = False,
+    encoding: str | None = None,
+    strict_lang: bool = False,
     runner: Runner | None = None,
 ) -> AnalyzeResult:
     """Analyze the full episode, save episode.context.json, and update series memory."""
@@ -153,6 +155,8 @@ def analyze_subtitle(
         reasoning=reasoning,
         max_retries=max_retries,
         skip_if_current=skip_if_current,
+        encoding=encoding,
+        strict_lang=strict_lang,
         runner=runner,
         resolve_source_fn=resolve_source,
         ai_runner_factory=make_ai_runner,
@@ -233,6 +237,7 @@ def translate_subtitle(
     project: str | None = None,
     interactive: bool = True,
     use_context: bool = True,
+    encoding: str | None = None,
     model: str | None = None,
     reasoning: str | None = None,
     max_retries: int = 2,
@@ -263,6 +268,7 @@ def translate_subtitle(
         project=project,
         interactive=interactive,
         use_context=use_context,
+        encoding=encoding,
         model=model,
         reasoning=reasoning,
         max_retries=max_retries,
@@ -370,6 +376,7 @@ def review_translation(
     model: str | None = None,
     reasoning: str | None = None,
     max_retries: int = 2,
+    encoding: str | None = None,
     runner: Runner | None = None,
 ) -> ReviewResult:
     """Review a translation, write episode.review.md, optionally apply safe fixes."""
@@ -389,6 +396,7 @@ def review_translation(
         model=model,
         reasoning=reasoning,
         max_retries=max_retries,
+        encoding=encoding,
         runner=runner,
         resolve_source_fn=resolve_source,
         ai_runner_factory=make_ai_runner,
@@ -409,6 +417,7 @@ def tighten_subtitle(
     model: str | None = None,
     reasoning: str | None = None,
     max_retries: int = 2,
+    encoding: str | None = None,
     runner: Runner | None = None,
 ) -> TightenResult:
     """Measure readability of a translated subtitle, compact over-limit lines, report."""
@@ -425,11 +434,12 @@ def tighten_subtitle(
         model=model,
         reasoning=reasoning,
         max_retries=max_retries,
+        encoding=encoding,
         runner=runner,
         ai_runner_factory=make_ai_runner,
     )
 
 
-def validate_subtitle(path: str | Path) -> ValidationResult:
+def validate_subtitle(path: str | Path, *, encoding: str | None = None) -> ValidationResult:
     """Structural validation of an existing subtitle file."""
-    return _validate_subtitle(path)
+    return _validate_subtitle(path, encoding=encoding)

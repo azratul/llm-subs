@@ -242,6 +242,86 @@ llm-subs validate "$OUT"
 backoff, jitter and `Retry-After` support; permanent authentication/configuration failures stop
 immediately (`--retries 0` disables retries).
 
+## Recipes
+
+Copy-paste starting points for the common cases. Adjust paths, `--provider`/`--model`, `--lang`
+and `--target`.
+
+### Local and private (Ollama)
+
+Keep everything on your machine — no per-use cost, subtitle text never leaves the host. Verify the
+model is installed, then translate:
+
+```bash
+llm-subs doctor --provider ollama --model qwen3:4b     # checks the server AND that the model exists
+llm-subs translate "Movie.en.srt" --provider ollama --model qwen3:4b \
+  --lang en --target es-latam --non-interactive
+```
+
+Point at a remote Ollama box with `OLLAMA_HOST=http://box:11434` (the server that produced an
+output is recorded in the manifest). A good split for a series: a strong CLI (`claude`) for the
+cheap `analyze`/`review` passes and a local model for the high-volume `translate`.
+
+### Anime episode, keep positioning (.ass)
+
+`.ass` is the default and the right choice for anime: it preserves style-level positioning, so a
+top-aligned translator note and the bottom dialogue at the same timestamp don't collide. Japanese
+audio with an embedded English track:
+
+```bash
+llm-subs probe "Episode 01.mkv"                        # find the English subtitle track
+llm-subs translate "Episode 01.mkv" --track 2 \
+  --provider ollama --model qwen3:4b \
+  --lang en --target es-latam --non-interactive        # -> Episode 01.es-latam.ass
+```
+
+### Movie for a flat player (.srt)
+
+When the target player has no `.ass` support, ask for `.srt` — overlapping cues are merged into
+stacked lines and whole-line italics survive as `<i>`:
+
+```bash
+llm-subs translate "Movie.en.srt" --format srt \
+  --provider ollama --model qwen3:4b \
+  --lang en --target es-latam --non-interactive        # -> Movie.es-latam.srt
+```
+
+### A whole series, with consistent memory
+
+Build series memory first (characters, gender, glossary, tone), then translate the season sharing
+one `--project` so every episode benefits from it — best done with `batch --pre-analyze`, which
+analyzes every episode before translating any:
+
+```bash
+llm-subs config "Show" --provider ollama --model qwen3:4b --target es-latam   # per-project defaults
+llm-subs batch "Show/Season 1" --project "Show" --glob '*.mkv' -r --pre-analyze
+```
+
+See [Building series memory before translating](#building-series-memory-before-translating) for the
+manual `analyze` → `translate` flow and how conflicts are handled.
+
+### Recovering after a failure or an edit
+
+Runs are resumable and outputs are protected:
+
+```bash
+# A crashed/Ctrl-C'd run: just re-run the same command — finished blocks are reused from the
+# checkpoint, only the missing ones are re-translated. Add --no-resume to force a clean redo.
+llm-subs batch "Show/Season 1" --project "Show" --glob '*.mkv' -r
+
+# Get the per-episode results (translated/skipped/stale/modified/failed) as machine-readable JSON.
+# Note: --json only changes the output format — the batch still translates and writes files.
+llm-subs batch "Show/Season 1" --project "Show" --glob '*.mkv' -r --json
+
+# You edited the source (re-timed, fixed a line): the affected outputs are reported stale and never
+# silently overwritten. Re-render them (reusing cached translations where the text is unchanged):
+llm-subs batch "Show/Season 1" --project "Show" --glob '*.mkv' -r --force
+```
+
+If you hand-edited a *translated* file, a later run refuses to clobber it (reported `modified`);
+`--force` overrides. `review --apply`/`tighten --apply` are the sanctioned ways to change a
+translated file in place.
+
 ## Any language → any language
 
 `--lang` is the **source** language (label and track selection); `--target` is the **destination**
@@ -282,6 +362,29 @@ writer doesn't emit `<b>`).
 llm-subs translate "$EP" --provider ollama --model qwen3:4b \
   --lang en --target es-latam --format srt --non-interactive
 ```
+
+## Input encoding
+
+Real-world sidecars are not always UTF-8: Western `.srt` files are often **CP1252**, Japanese ones
+**Shift-JIS**, and some tools emit **UTF-16**. The encoding is **auto-detected** — a BOM
+(UTF-8/16/32) and strict UTF-8 are handled directly; for legacy files **`--lang` doubles as a
+codepage hint** (`--lang en` prefers CP1252, `--lang pl` CP1250, `--lang ja` Shift-JIS, …), used
+only when that codec decodes the bytes cleanly. Anything else is resolved statistically with
+[charset-normalizer](https://github.com/jawah/charset_normalizer). The hint matters because
+near-identical codepages (CP1250 vs CP1252 differ in a few positions like €/Ł) are beyond byte
+statistics — your declared source language settles it. No configuration is needed for the common
+cases.
+
+When detection still guesses wrong, force the codec — the definitive override:
+
+```bash
+llm-subs translate movie.srt --encoding cp1252 --lang en --target es-latam
+```
+
+`--encoding` is available on `translate`, `batch`, `analyze`, `review`, `tighten` and `validate`
+(an unknown codec name is reported as a short error). On `review` it applies to the **source only** —
+the translated file is this tool's own UTF-8 output and is always auto-detected. Output is always
+written as UTF-8.
 
 ## Commands
 
@@ -328,6 +431,7 @@ SDK).
 ### Cross-cutting flags
 
 `--non-interactive` / `--yes` / `-y` · `--lang` (source language) · `--target` (target language) ·
+`--encoding` (force the input text encoding; auto-detected otherwise) ·
 `--on-conflict {ask,keep,overwrite,flag}` · `--project` (series name). `translate` also takes
 `--format {ass,srt}` (default `ass`), `--strict-lang` (refuse a different-language subtitle),
 `--fail-on-untranslated` (exit non-zero if any line kept the source text — useful in batch
@@ -688,12 +792,13 @@ specific items follow.
   image-based is rejected with a clear message — extracting that text would require an OCR step
   (e.g. Tesseract via SubtitleEdit), which is out of scope. Use a text sidecar (`.srt`/`.ass`) or
   OCR the track to text yourself first.
-- **`--strict-lang` is translation-only.** `analyze` and `review` can resolve a subtitle track
-  from a video container, but they intentionally do not expose `--strict-lang`; adding the flag
-  across those commands would expand the CLI for a rare personal-use case. When the container's
-  automatic language choice is ambiguous, use `probe` and pass an explicit `--track` (or analyze
-  a sidecar subtitle directly). `batch --pre-analyze` likewise uses the normal best-match
-  heuristic during its analysis phase.
+- **Standalone `analyze` and `review` expose no `--strict-lang`.** They can resolve a subtitle
+  track from a video container, but they intentionally do not expose `--strict-lang`; adding the
+  flag across those commands would expand the CLI for a rare personal-use case. When the
+  container's automatic language choice is ambiguous, use `probe` and pass an explicit `--track`
+  (or analyze a sidecar subtitle directly). `batch --strict-lang` does apply to its
+  `--pre-analyze` pass, so a wrong-language source fails the episode instead of feeding the
+  series memory.
 - **Mixed ASS drawing/text events are treated as drawings.** An event containing drawing mode
   (`{\p1}` or higher) is skipped as a whole, even if it later switches back with `{\p0}` and
   contains visible text. Such mixed events are uncommon, while extracting only the text portion

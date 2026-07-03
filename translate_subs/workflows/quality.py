@@ -66,6 +66,7 @@ def review_translation(
     model: str | None = None,
     reasoning: str | None = None,
     max_retries: int = 2,
+    encoding: str | None = None,
     runner: Runner | None = None,
     resolve_source_fn: ResolveSourceFn,
     ai_runner_factory: RunnerFactory,
@@ -81,7 +82,7 @@ def review_translation(
         track_index=track_index,
         interactive=interactive,
     )
-    source_subs = document.load(source.subtitle_path)
+    source_subs = document.load(source.subtitle_path, encoding=encoding, lang_hint=lang)
     units = extract_units(source_subs)
     if not units:
         raise PipelineError("No translatable lines found in the source.")
@@ -89,6 +90,9 @@ def review_translation(
     translated_path = Path(translated_path)
     if not translated_path.exists():
         raise PipelineError(f"Translated file not found: {translated_path}")
+    # `encoding` overrides only the *source* (a possibly legacy CP1252/Shift-JIS sidecar). The
+    # translated file is this tool's own output (UTF-8) and is always auto-detected: a legacy
+    # --encoding forced onto it would corrupt the UTF-8 translation.
     target_subs = document.load(translated_path)
 
     target_is_ass = translated_path.suffix.lower() in (".ass", ".ssa")
@@ -264,6 +268,7 @@ def tighten_subtitle(
     model: str | None = None,
     reasoning: str | None = None,
     max_retries: int = 2,
+    encoding: str | None = None,
     runner: Runner | None = None,
     ai_runner_factory: RunnerFactory,
 ) -> TightenResult:
@@ -275,7 +280,7 @@ def tighten_subtitle(
     translated_path = Path(translated_path)
     if not translated_path.exists():
         raise PipelineError(f"Translated file not found: {translated_path}")
-    subs = document.load(translated_path)
+    subs = document.load(translated_path, encoding=encoding)
 
     flagged: list[FlaggedLine] = []
     for index, event in enumerate(subs.events):
@@ -389,8 +394,8 @@ def tighten_subtitle(
     )
 
 
-def validate_subtitle(path: str | Path) -> ValidationResult:
+def validate_subtitle(path: str | Path, *, encoding: str | None = None) -> ValidationResult:
     path = Path(path)
     if not path.exists():
         raise PipelineError(f"File not found: {path}")
-    return validate_file(path)
+    return validate_file(path, encoding=encoding)

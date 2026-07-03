@@ -98,6 +98,8 @@ def analyze_subtitle(
     reasoning: str | None = None,
     max_retries: int = 2,
     skip_if_current: bool = False,
+    encoding: str | None = None,
+    strict_lang: bool = False,
     runner: Runner | None = None,
     resolve_source_fn: ResolveSourceFn,
     ai_runner_factory: RunnerFactory,
@@ -106,14 +108,18 @@ def analyze_subtitle(
         validate_target(target)
     except ValueError as exc:
         raise PipelineError(str(exc)) from exc
+    # `strict_lang` matters here even though analysis writes no subtitle: a wrong-language
+    # fallback would merge that source's characters/glossary into the shared series memory
+    # before the translate pass rejects the same source.
     source = resolve_source_fn(
         input_path,
         work_dir=config.WORK_DIR,
         lang=lang,
         track_index=track_index,
         interactive=interactive,
+        strict_lang=strict_lang,
     )
-    units = extract_units(document.load(source.subtitle_path))
+    units = extract_units(document.load(source.subtitle_path, encoding=encoding, lang_hint=lang))
     if not units:
         raise PipelineError("No translatable lines found in the subtitle.")
 

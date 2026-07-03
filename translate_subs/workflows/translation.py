@@ -37,7 +37,7 @@ from translate_subs.naming import (
     validate_target,
 )
 from translate_subs.subs import document
-from translate_subs.subs.extractor import extract_units
+from translate_subs.subs.extractor import ass_fidelity_lines, extract_units
 from translate_subs.subs.reinserter import apply_translations, flatten_overlaps, prune_to_units
 from translate_subs.subs.validator import (
     ValidationResult,
@@ -111,6 +111,7 @@ def translate_subtitle(
     project: str | None = None,
     interactive: bool = True,
     use_context: bool = True,
+    encoding: str | None = None,
     model: str | None = None,
     reasoning: str | None = None,
     max_retries: int = 2,
@@ -142,7 +143,7 @@ def translate_subtitle(
         strict_lang=strict_lang,
     )
 
-    subs = document.load(source.subtitle_path)
+    subs = document.load(source.subtitle_path, encoding=encoding, lang_hint=lang)
     units = extract_units(subs)
     if not units:
         raise PipelineError("No translatable lines found in the subtitle.")
@@ -203,8 +204,15 @@ def translate_subtitle(
     # the run turns out to skip.
     effective_model = getattr(getattr(translation_provider, "runner", None), "model", None)
 
+    # For .ass the output preserves far more than the translatable units: style definitions, each
+    # event's layout metadata (layer/margins/effect), and non-translatable events (drawings,
+    # comments) copied verbatim. Fold all of that into the fingerprint so a re-style or a
+    # drawing/margin edit flags the output stale even though no translated line changed. .srt is
+    # flat and prunes those, so it contributes nothing and the hash stays units-only. `subs` here is
+    # still the untouched source (translations/pruning happen later).
+    ass_extra = [] if fmt == "srt" else ass_fidelity_lines(subs)
     out_manifest = OutputManifest(
-        source_hash=output_source_digest(units),
+        source_hash=output_source_digest(units, extra_lines=ass_extra),
         target=target,
         provider=provider,
         model=effective_model or model or "",

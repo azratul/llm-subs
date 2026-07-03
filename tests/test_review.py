@@ -393,6 +393,68 @@ def test_review_translation_applies_only_safe_fixes(tmp_path, monkeypatch):
     assert f"Translated fingerprint: {expected}" in report_text
 
 
+def test_review_encoding_applies_to_source_only(tmp_path, monkeypatch):
+    # --encoding overrides the source read (a legacy CP1252 sidecar), but the translated file is
+    # our own UTF-8 output and must stay auto-detected: forcing cp1252 onto it would corrupt the
+    # multi-byte UTF-8 line that is NOT fixed by review.
+    monkeypatch.setattr(config, "PROJECTS_DIR", tmp_path / "projects")
+
+    src = pysubs2.SSAFile()
+    src.styles["White"] = pysubs2.SSAStyle()
+    e1 = pysubs2.SSAEvent(start=1000, end=3000, text="I'm tired of this.", style="White")
+    e1.name = "Yumi"
+    e2 = pysubs2.SSAEvent(start=3100, end=5000, text="Let's go.", style="White")
+    e2.name = "Akira"
+    src.events.extend([e1, e2])
+    source_path = tmp_path / "ep01.en.ass"
+    source_path.write_bytes(src.to_string("ass").encode("cp1252"))  # legacy CP1252 sidecar
+
+    translated = pysubs2.SSAFile()
+    translated.events.append(pysubs2.SSAEvent(start=1000, end=3000, text="Estoy cansado."))
+    translated.events.append(pysubs2.SSAEvent(start=3100, end=5000, text="Vámonos."))
+    translated_path = tmp_path / "ep01.es.srt"
+    translated.save(str(translated_path), format_="srt")  # UTF-8 (our own output)
+
+    project_dir = tmp_path / "projects" / "Serie" / "es-latam"
+    project_dir.mkdir(parents=True)
+    (project_dir / "memory.json").write_text(
+        json.dumps({"characters": [{"name": "Yumi", "gender": "female"}]}), encoding="utf-8"
+    )
+
+    def fake_runner(prompt: str) -> str:
+        return json.dumps(
+            [
+                {
+                    "scope": "line",
+                    "id": "0001",
+                    "kind": "gender",
+                    "message": "wrong gender",
+                    "current": "Estoy cansado.",
+                    "suggested": "Estoy cansada.",
+                    "auto_safe": True,
+                }
+            ]
+        )
+
+    result = pipeline.review_translation(
+        source_path,
+        translated_path,
+        project="Serie",
+        interactive=False,
+        apply=True,
+        encoding="cp1252",
+        runner=fake_runner,
+    )
+
+    assert result.n_lines == 2  # source read correctly under the forced cp1252
+    assert result.n_applied == 1
+    reloaded = pysubs2.load(str(translated_path))
+    assert reloaded.events[0].plaintext == "Estoy cansada."
+    # The untouched line proves the UTF-8 translation was auto-detected, not decoded as cp1252
+    # (which would have produced "VÃ¡monos.").
+    assert reloaded.events[1].plaintext == "Vámonos."
+
+
 def test_review_apply_rejects_multi_span_glossary_fix(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "PROJECTS_DIR", tmp_path / "projects")
 

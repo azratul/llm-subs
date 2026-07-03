@@ -150,12 +150,17 @@ def purge_cache(
 
 def validate(
     subtitle: Path = typer.Argument(..., help="Subtitle file to validate."),
+    encoding: str | None = typer.Option(
+        None,
+        "--encoding",
+        help="Text encoding of the subtitle (auto-detected when omitted).",
+    ),
     json_out: bool = typer.Option(False, "--json", help="Emit the result as JSON."),
 ) -> None:
     """Structurally validate a subtitle file (parseable, timings, no leftover markup)."""
     runtime = _runtime()
     try:
-        result = runtime.validate_subtitle(subtitle)
+        result = runtime.validate_subtitle(subtitle, encoding=encoding)
     except runtime._EXPECTED_ERRORS as exc:
         if json_out:
             _emit_json({"ok": False, "warnings": [], "errors": [str(exc)]})

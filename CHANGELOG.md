@@ -6,7 +6,38 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+- **`batch --pre-analyze` now honours `--strict-lang`.** The flag reached the translate pass but
+  not the analysis pass, so a wrong-language source (e.g. the only embedded track is Spanish when
+  `--lang en` was requested) would have its characters and glossary merged into the shared series
+  memory before the translate pass rejected that same source — persistent memory contamination
+  from a language the user explicitly refused. The analysis pass now applies the same strict check
+  and records the episode as failed instead.
+- **Output-staleness digest now covers the full `.ass` output surface.** For `.ass` the output
+  preserves more than the translatable units: `[Script Info]` headers (PlayResX/PlayResY rescale
+  every coordinate), the Aegisub project section, embedded attachments (`[Fonts]`/`[Graphics]`),
+  `[V4+ Styles]` definitions (all fields, including tertiary colour and alpha level), each event's
+  layout metadata (layer, actor, margins, effect), and the non-translatable events (drawings,
+  comments) copied through verbatim. The source fingerprint only hashed the units, so a restyle, a
+  resolution change, a margin edit, or a drawing change left the output looking up to date. `.srt`
+  is flat and prunes those, so its digest stays units-only. Existing `.ass` manifests are re-flagged
+  stale once (regenerate with `--force`).
+
 ### Added
+- **Automatic input-encoding detection** with a `--encoding` override. Subtitle sidecars are
+  frequently CP1252 (Western), Shift-JIS (Japanese `.srt`) or UTF-16, which pysubs2's UTF-8 default
+  turned into mojibake or a hard parse error. `translate`, `batch`, `analyze`, `review`, `tighten`
+  and `validate` now sniff the bytes first — a BOM (UTF-8/16/32) and strict UTF-8 are handled
+  directly; for the legacy remainder **`--lang` acts as a codepage hint** (en/es/fr/… → CP1252,
+  pl/cs/hu/… → CP1250, ja → CP932, ru/uk/… → CP1251, and so on), trusted only when the hinted codec
+  decodes the bytes strictly — near-identical codepages (CP1250 vs CP1252 differ in a few positions
+  like €/Ł) are genuinely beyond byte statistics, and the user's declared source language is a
+  stronger prior. Files without a usable hint are resolved statistically via **charset-normalizer**
+  (added as a dependency; a strict decode ladder can't tell CP1252 from Shift-JIS and silently
+  corrupts one). Pass `--encoding cp1252` (etc.) as the definitive override; an unknown codec
+  name is now a short `unknown encoding '...'` error instead of a traceback. `review --encoding`
+  applies to the **source only** — the translated file is this tool's own UTF-8 output and is always
+  auto-detected, so a legacy source encoding can't corrupt it.
 - `project-status <project> [--target ...]`: show a project's stored state on disk — glossary/
   character/conflict counts, and per-episode whether it was analyzed, whether a checkpoint *file*
   is present (not whether it will resume — that depends on run-time settings this offline view
@@ -43,6 +74,13 @@ All notable changes to this project are documented here. The format follows
   fingerprint alone.
 
 ### Changed
+- **CI covers the dependency promises.** The audit job now syncs `--all-extras`, so `pip-audit`
+  covers litellm's dependency tree instead of only the core install, and a new `minimum-versions`
+  job resolves every direct dependency to its lowest declared version (`--resolution
+  lowest-direct`, Python 3.11) and runs the full suite against it — the floors are a tested
+  contract, not an aspiration. That exposed one dishonest floor: pydantic 2.7 is uninstallable on
+  CPython 3.14 (no pydantic-core wheels, and the old core doesn't build there), so the pydantic
+  requirement is now per-Python (`>=2.7` below 3.14, `>=2.12` from 3.14 on).
 - `batch` now **isolates per-episode content failures** instead of aborting the whole season on any
   `ProviderError`. Each failure carries a cause (`content`, `auth`, `config`, `quota`, `service`,
   or `unknown`): a **content/protocol** fault — an unparseable reply or wrong ids for one episode —

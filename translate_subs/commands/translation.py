@@ -100,6 +100,11 @@ def translate(
     ),
     track: int | None = typer.Option(None, help="Embedded track index (when several exist)."),
     lang: str = typer.Option("en", help="Preferred source language when picking a track."),
+    encoding: str | None = typer.Option(
+        None,
+        "--encoding",
+        help="Source text encoding (e.g. cp1252, shift-jis, utf-16). Auto-detected when omitted.",
+    ),
     out_dir: Path | None = typer.Option(
         None, "--out-dir", help="Output directory (defaults next to the original)."
     ),
@@ -172,6 +177,7 @@ def translate(
             max_retries=retries,
             track_index=track,
             lang=lang,
+            encoding=encoding,
             out_dir=out_dir,
             output=output,
             fmt=format,
@@ -287,6 +293,11 @@ def batch(
         2, "--retries", min=0, help="Retries per block after an agent/JSON failure."
     ),
     lang: str = typer.Option("en", help="Preferred source language when picking a track."),
+    encoding: str | None = typer.Option(
+        None,
+        "--encoding",
+        help="Source text encoding (e.g. cp1252, shift-jis, utf-16). Auto-detected when omitted.",
+    ),
     out_dir: Path | None = typer.Option(
         None, "--out-dir", help="Write every output here (defaults next to each input)."
     ),
@@ -296,7 +307,11 @@ def batch(
         False, "--force", "-f", help="Re-translate episodes whose output already exists."
     ),
     strict_lang: bool = typer.Option(
-        False, "--strict-lang", help="Fail an episode rather than use a different-language sub."
+        False,
+        "--strict-lang",
+        help="Fail an episode rather than use a different-language sub "
+        "(also guards the --pre-analyze pass, so series memory can't be "
+        "contaminated by a wrong-language source).",
     ),
     fail_on_untranslated: bool = typer.Option(
         False,
@@ -376,10 +391,12 @@ def batch(
                 reasoning=analyze_reasoning,
                 max_retries=retries,
                 lang=lang,
+                encoding=encoding,
                 project=project,
                 interactive=False,
                 on_conflict="flag",
                 skip_if_current=True,
+                strict_lang=strict_lang,
             )
             if not json_out:
                 if analyze_result.items:
@@ -414,6 +431,7 @@ def batch(
             reasoning=reasoning,
             max_retries=retries,
             lang=lang,
+            encoding=encoding,
             out_dir=out_dir,
             fmt=format,
             project=project,

@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -38,7 +38,7 @@ def source_digest(units: list[TranslatableUnit]) -> str:
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()[:16]
 
 
-def output_source_digest(units: list[TranslatableUnit]) -> str:
+def output_source_digest(units: list[TranslatableUnit], *, extra_lines: Iterable[str] = ()) -> str:
     """Fingerprint of everything a source bakes into the rendered output, for the output manifest.
 
     Broader than `source_digest`: it also covers timing, style and the whole-line leading override
@@ -47,13 +47,21 @@ def output_source_digest(units: list[TranslatableUnit]) -> str:
     subtitle would be desynchronised while still looking up to date. Including timing/style here
     lets `batch` flag such an output as stale so `--force` can re-render it (reusing the cached
     translations, which are keyed on text/context, not timing).
+
+    `extra_lines` fingerprints source content that reaches the output but is not a translatable
+    unit: for `.ass` the caller passes a serialization of the non-translatable events (drawings,
+    comments, empty cues) that are copied through verbatim, so editing one flags the output stale
+    too. `.srt` prunes those events, so it passes none — with no extras the hash is byte-identical
+    to the units-only digest, keeping existing manifests valid.
     """
-    blob = "\n".join(
+    parts = [
         f"{unit.id}\t{unit.start}\t{unit.end}\t{unit.style}\t{unit.lead_tags}\t"
         f"{unit.speaker or ''}\t{unit.text}"
         for unit in units
-    )
-    return hashlib.sha256(blob.encode("utf-8")).hexdigest()[:16]
+    ]
+    # "~" namespaces preserved-event lines so they can never collide with a unit line above.
+    parts.extend(f"~{line}" for line in extra_lines)
+    return hashlib.sha256("\n".join(parts).encode("utf-8")).hexdigest()[:16]
 
 
 CONTEXT_SCHEMA_VERSION: Literal[1] = 1

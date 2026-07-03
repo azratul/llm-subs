@@ -264,6 +264,138 @@ def test_changed_source_reports_stale_and_force_refreshes(tmp_path, monkeypatch)
         pipeline.translate_subtitle(source, **kw)
 
 
+def _ass_with_drawing(path, dialogue, drawing):
+    subs = pysubs2.SSAFile()
+    subs.styles["White"] = pysubs2.SSAStyle()
+    subs.events.append(pysubs2.SSAEvent(start=1000, end=3000, text=dialogue, style="White"))
+    subs.events.append(pysubs2.SSAEvent(start=3100, end=5000, text=drawing, style="White"))
+    subs.save(str(path))
+
+
+def test_changed_preserved_ass_event_reports_stale(tmp_path, monkeypatch):
+    # A non-translatable event (a drawing) that .ass copies through verbatim must flag the output
+    # stale when edited, even though it never becomes a translatable unit.
+    from translate_subs.workflows.models import StaleOutputError
+
+    monkeypatch.setattr(config, "PROJECTS_DIR", tmp_path / "projects")
+    source = tmp_path / "ep.en.ass"
+    _ass_with_drawing(source, "Hello.", r"{\p1}m 0 0 l 10 0 10 10 0 10{\p0}")
+    kw = dict(provider="identity", interactive=False, fmt="ass", project="P")
+    pipeline.translate_subtitle(source, **kw)
+
+    # Same dialogue, different drawing geometry: the translation is unchanged but the .ass output no
+    # longer matches the source.
+    _ass_with_drawing(source, "Hello.", r"{\p1}m 0 0 l 20 0 20 20 0 20{\p0}")
+    with pytest.raises(StaleOutputError, match="source"):
+        pipeline.translate_subtitle(source, **kw)
+
+
+def test_changed_ass_style_definition_reports_stale(tmp_path, monkeypatch):
+    # A restyle (font size) changes how every line using that style renders, even though no line's
+    # text/timing changes. The .ass output must be flagged stale.
+    from translate_subs.workflows.models import StaleOutputError
+
+    monkeypatch.setattr(config, "PROJECTS_DIR", tmp_path / "projects")
+    source = tmp_path / "ep.en.ass"
+    kw = dict(provider="identity", interactive=False, fmt="ass", project="P")
+
+    subs = pysubs2.SSAFile()
+    subs.styles["White"] = pysubs2.SSAStyle(fontsize=40)
+    subs.events.append(pysubs2.SSAEvent(start=1000, end=3000, text="Hello.", style="White"))
+    subs.save(str(source))
+    pipeline.translate_subtitle(source, **kw)
+
+    subs.styles["White"].fontsize = 72
+    subs.save(str(source))
+    with pytest.raises(StaleOutputError, match="source"):
+        pipeline.translate_subtitle(source, **kw)
+
+
+def test_changed_script_info_reports_stale(tmp_path, monkeypatch):
+    # PlayResX/PlayResY rescale every coordinate in the script, so a resolution change alters the
+    # render without touching any line. The .ass output must be flagged stale.
+    from translate_subs.workflows.models import StaleOutputError
+
+    monkeypatch.setattr(config, "PROJECTS_DIR", tmp_path / "projects")
+    source = tmp_path / "ep.en.ass"
+    kw = dict(provider="identity", interactive=False, fmt="ass", project="P")
+
+    subs = pysubs2.SSAFile()
+    subs.styles["White"] = pysubs2.SSAStyle()
+    subs.info["PlayResX"] = "640"
+    subs.info["PlayResY"] = "480"
+    subs.events.append(pysubs2.SSAEvent(start=1000, end=3000, text="Hello.", style="White"))
+    subs.save(str(source))
+    pipeline.translate_subtitle(source, **kw)
+
+    subs.info["PlayResX"] = "1280"
+    subs.info["PlayResY"] = "720"
+    subs.save(str(source))
+    with pytest.raises(StaleOutputError, match="source"):
+        pipeline.translate_subtitle(source, **kw)
+
+
+def test_changed_embedded_graphic_reports_stale(tmp_path, monkeypatch):
+    # An embedded [Graphics] attachment is preserved in the .ass output; changing its content must
+    # flag the output stale, exactly like fonts and drawings.
+    from translate_subs.workflows.models import StaleOutputError
+
+    monkeypatch.setattr(config, "PROJECTS_DIR", tmp_path / "projects")
+    source = tmp_path / "ep.en.ass"
+    kw = dict(provider="identity", interactive=False, fmt="ass", project="P")
+
+    subs = pysubs2.SSAFile()
+    subs.styles["White"] = pysubs2.SSAStyle()
+    subs.graphics_opaque["logo.bmp"] = ["QUJDREVG"]
+    subs.events.append(pysubs2.SSAEvent(start=1000, end=3000, text="Hello.", style="White"))
+    subs.save(str(source))
+    pipeline.translate_subtitle(source, **kw)
+
+    subs.graphics_opaque["logo.bmp"] = ["R0hJSktM"]
+    subs.save(str(source))
+    with pytest.raises(StaleOutputError, match="source"):
+        pipeline.translate_subtitle(source, **kw)
+
+
+def test_changed_ass_event_margin_reports_stale(tmp_path, monkeypatch):
+    # An event-level layout change (vertical margin) repositions the line; the .ass output no longer
+    # matches the source and must be flagged stale.
+    from translate_subs.workflows.models import StaleOutputError
+
+    monkeypatch.setattr(config, "PROJECTS_DIR", tmp_path / "projects")
+    source = tmp_path / "ep.en.ass"
+    kw = dict(provider="identity", interactive=False, fmt="ass", project="P")
+
+    subs = pysubs2.SSAFile()
+    subs.styles["White"] = pysubs2.SSAStyle()
+    subs.events.append(
+        pysubs2.SSAEvent(start=1000, end=3000, text="Hello.", style="White", marginv=10)
+    )
+    subs.save(str(source))
+    pipeline.translate_subtitle(source, **kw)
+
+    subs.events[0].marginv = 200
+    subs.save(str(source))
+    with pytest.raises(StaleOutputError, match="source"):
+        pipeline.translate_subtitle(source, **kw)
+
+
+def test_changed_preserved_event_does_not_affect_srt(tmp_path, monkeypatch):
+    # .srt prunes non-translatable events, so a drawing change must NOT flag an .srt output stale
+    # (the drawing never reaches the .srt): the digest stays units-only and the run is skipped.
+    from translate_subs.workflows.models import OutputExistsError
+
+    monkeypatch.setattr(config, "PROJECTS_DIR", tmp_path / "projects")
+    source = tmp_path / "ep.en.ass"
+    _ass_with_drawing(source, "Hello.", r"{\p1}m 0 0 l 10 0 10 10 0 10{\p0}")
+    kw = dict(provider="identity", interactive=False, fmt="srt", project="P")
+    pipeline.translate_subtitle(source, **kw)
+
+    _ass_with_drawing(source, "Hello.", r"{\p1}m 0 0 l 20 0 20 20 0 20{\p0}")
+    with pytest.raises(OutputExistsError):
+        pipeline.translate_subtitle(source, **kw)
+
+
 def test_ass_and_srt_outputs_get_independent_manifests(tmp_path, monkeypatch):
     # Regression: a single per-episode manifest was shared by every artifact, so force-refreshing
     # one format silently marked the other up to date. Each output must track its own provenance.

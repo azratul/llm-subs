@@ -2092,6 +2092,51 @@ def test_batch_cli_pre_analyze_runs_analyze_then_translate(tmp_path, monkeypatch
     assert "Phase 2/2" in out.stdout
 
 
+def test_analyze_subtitle_forwards_strict_lang_to_source_resolution(tmp_path):
+    """A wrong-language source must be rejected *before* analysis touches series memory.
+
+    Without this, `batch --pre-analyze --strict-lang` would merge the wrong language's
+    characters/glossary into the shared memory and only then fail the translate pass.
+    """
+    from translate_subs.io.source_resolver import SourceError
+    from translate_subs.workflows import memory as memory_workflows
+
+    received: dict = {}
+
+    def fake_resolve(input_path, **kwargs):
+        received.update(kwargs)
+        raise SourceError("no 'en' subtitle track")
+
+    with pytest.raises(SourceError):
+        memory_workflows.analyze_subtitle(
+            tmp_path / "ep01.mkv",
+            strict_lang=True,
+            resolve_source_fn=fake_resolve,
+            ai_runner_factory=lambda provider, **kwargs: lambda prompt: "",
+        )
+    assert received["strict_lang"] is True
+
+
+def test_batch_cli_pre_analyze_forwards_strict_lang(tmp_path, monkeypatch):
+    from translate_subs import cli
+    from translate_subs.pipeline import AnalyzeBatchResult, BatchResult
+
+    analyze_kwargs: dict = {}
+
+    def fake_batch_analyze(directory, *, on_episode=None, **kwargs):
+        analyze_kwargs.update(kwargs)
+        return AnalyzeBatchResult()
+
+    monkeypatch.setattr(cli, "batch_analyze", fake_batch_analyze)
+    monkeypatch.setattr(cli, "batch_translate", lambda directory, **kwargs: BatchResult())
+    _one_line_srt(tmp_path / "ep01.en.srt")
+
+    runner = CliRunner()
+    out = runner.invoke(app, ["batch", str(tmp_path), "--pre-analyze", "--strict-lang"])
+    assert out.exit_code == 0
+    assert analyze_kwargs["strict_lang"] is True
+
+
 def test_batch_translate_aborts_on_provider_error(tmp_path, monkeypatch):
     """A ProviderError propagates out of batch_translate instead of being swallowed."""
     from translate_subs.ai.provider import ProviderError

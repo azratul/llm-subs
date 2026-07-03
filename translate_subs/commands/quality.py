@@ -70,6 +70,11 @@ def review(
     ),
     track: int | None = typer.Option(None, help="Embedded track index (when several exist)."),
     lang: str = typer.Option("en", help="Preferred source language when picking a track."),
+    encoding: str | None = typer.Option(
+        None,
+        "--encoding",
+        help="Text encoding of the source file (the translated file is auto-detected as UTF-8).",
+    ),
     project: str | None = typer.Option(None, help="Project/series name."),
     max_chars: int = typer.Option(42, help="Max characters per visual line."),
     provider: str = typer.Option("claude", help=_AI_PROVIDER_HELP),
@@ -105,6 +110,7 @@ def review(
             target=target,
             track_index=track,
             lang=lang,
+            encoding=encoding,
             project=project,
             interactive=not non_interactive,
             max_chars=max_chars,
@@ -168,6 +174,11 @@ def tighten(
         help="Original input the translation came from; keys the report to the same episode "
         "directory as translate/review when the translated file lives in --out-dir.",
     ),
+    encoding: str | None = typer.Option(
+        None,
+        "--encoding",
+        help="Text encoding of the translated file (auto-detected when omitted).",
+    ),
     max_chars_per_line: int = typer.Option(42, help="Max characters per visual line."),
     max_lines: int = typer.Option(2, help="Max lines per subtitle."),
     max_cps: float = typer.Option(18.0, help="Max characters per second."),
@@ -208,6 +219,7 @@ def tighten(
             project=project,
             source=source,
             limits=limits,
+            encoding=encoding,
             use_llm=not no_llm,
             apply=apply,
             confirm=_make_apply_confirm(

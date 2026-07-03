@@ -6,9 +6,8 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-import pysubs2
-
 from translate_subs.domain.models import TranslatableUnit
+from translate_subs.subs import document
 
 # pysubs2 represents the basic italic/bold that survive .srt as {\i1}/{\b0} override
 # blocks in event.text. Those are allowed; anything else in a block is leftover markup.
@@ -57,13 +56,13 @@ def validate_translations(
     return ValidationResult(ok=not errors, errors=errors)
 
 
-def validate_file(path: str | Path) -> ValidationResult:
+def validate_file(path: str | Path, *, encoding: str | None = None) -> ValidationResult:
     """Standalone structural check of a subtitle file (no source needed)."""
     errors: list[str] = []
     warnings: list[str] = []
 
     try:
-        subs = pysubs2.load(str(path))
+        subs = document.load(path, encoding=encoding)
     except Exception as exc:  # noqa: BLE001 - report any parse failure
         return ValidationResult(ok=False, errors=[f"not parseable: {exc}"])
 
@@ -119,7 +118,7 @@ def validate_output(
     warnings: list[str] = []
 
     try:
-        out = pysubs2.load(str(srt_path))
+        out = document.load(srt_path)
     except Exception as exc:  # noqa: BLE001 - report any parse failure
         return ValidationResult(ok=False, errors=[f"output is not parseable: {exc}"])
 

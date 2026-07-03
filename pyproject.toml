@@ -24,8 +24,16 @@ dependencies = [
     # a breaking major should be adopted deliberately with a test run, not resolved in silently.
     "pysubs2>=1.8,<2",
     "typer>=0.15.4,<1",
-    "pydantic>=2.7,<3",
+    # pydantic-core wheels for CPython 3.14 only exist from pydantic 2.12, and the older core
+    # doesn't build against 3.14 either — so the floor is per-Python, or the declared minimum
+    # would be uninstallable on part of the supported matrix.
+    "pydantic>=2.7,<3; python_version < '3.14'",
+    "pydantic>=2.12,<3; python_version >= '3.14'",
     "rich>=13.7,<16",
+    # Statistical text-encoding detection for input subtitles. A strict decode ladder can't
+    # disambiguate legacy single/multi-byte encodings (bytes valid as both CP1252 and Shift-JIS),
+    # so we defer to charset-normalizer (pure Python, no build step) after the BOM/UTF-8 fast paths.
+    "charset-normalizer>=3,<4",
 ]
 
 [project.optional-dependencies]
