@@ -128,10 +128,10 @@ def build_memory_rules(pm: ProjectMemory, ctx: EpisodeContext | None) -> MemoryR
 
     # Deduplicate bidirectional pairs (A→B and B→A are stored separately but carry the same
     # semantic information). Keep the most informative description (longest wins).
-    pair_rels: dict[frozenset, tuple[str, str, str]] = {}
+    pair_rels: dict[frozenset[str], tuple[str, str, str]] = {}
     for cm in pm.memory.characters:
         for other, rel in cm.relationships.items():
-            pair: frozenset = frozenset({cm.name.casefold(), other.casefold()})
+            pair: frozenset[str] = frozenset({cm.name.casefold(), other.casefold()})
             existing = pair_rels.get(pair)
             if existing is None or len(rel) > len(existing[2]):
                 pair_rels[pair] = (cm.name, other, rel)
@@ -172,7 +172,7 @@ def memory_prompt_digest(mr: MemoryRules) -> str:
 _MAX_RELATIONSHIPS_PER_BLOCK = 20
 
 
-def rules_for_text(mr: MemoryRules, text: str, speakers: Iterable[str]) -> list[str]:
+def rules_for_text(mr: MemoryRules, text: str, speakers: Iterable[str | None]) -> list[str]:
     """`mr.base` plus only the glossary/gender/relationship entries referenced by `text`."""
     hay = text.casefold()
     present_speakers = {s.casefold() for s in speakers if s}

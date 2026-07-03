@@ -2,15 +2,21 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 import typer
+from rich.console import Console
+from rich.status import Status
 from rich.table import Table
 
 from translate_subs.readability.metrics import ReadabilityLimits
 
+_ConfirmGate = Callable[[list[tuple[str, str, str]]], bool]
 
-def _print_diff_table(console, fixes: list[tuple[str, str, str]], title: str) -> None:
+
+def _print_diff_table(console: Console, fixes: list[tuple[str, str, str]], title: str) -> None:
     table = Table(title=title, show_header=True, header_style="bold", expand=False)
     table.add_column("ID", style="dim", no_wrap=True, width=6)
     table.add_column("Before", style="red")
@@ -20,7 +26,9 @@ def _print_diff_table(console, fixes: list[tuple[str, str, str]], title: str) ->
     console.print(table)
 
 
-def _make_apply_confirm(console, status, non_interactive: bool, title: str, noun: str):
+def _make_apply_confirm(
+    console: Console, status: Status, non_interactive: bool, title: str, noun: str
+) -> _ConfirmGate | None:
     """A confirm gate for --apply: show the diff and ask before overwriting whole lines.
 
     Each change replaces a whole line, so a silent write is risky; the default (interactive) run
@@ -45,7 +53,9 @@ _AUX_DEFAULTED = ("provider", "model", "target", "lang", "reasoning")
 _TIGHTEN_DEFAULTED = ("provider", "model", "target", "reasoning")
 
 
-def _runtime():
+def _runtime() -> Any:
+    # Shared command runtime; imported lazily to break the cli <-> commands cycle. Typed Any because
+    # it is a dynamically-accessed module facade, not a nominal type.
     from translate_subs import cli
 
     return cli
@@ -75,7 +85,7 @@ def review(
     non_interactive: bool = typer.Option(
         False, "--non-interactive", "--yes", "-y", help="Do not prompt; resolve by heuristic/flags."
     ),
-):
+) -> None:
     """Review a translation and write episode.review.md (optionally apply safe fixes)."""
     runtime = _runtime()
     overrides = runtime._project_overrides(ctx, project, _AUX_DEFAULTED)
@@ -174,7 +184,7 @@ def tighten(
     non_interactive: bool = typer.Option(
         False, "--non-interactive", "--yes", "-y", help="Apply without the confirmation prompt."
     ),
-):
+) -> None:
     """Flag subtitles that break readability limits and compact them via the LLM."""
     runtime = _runtime()
     overrides = runtime._project_overrides(ctx, project, _TIGHTEN_DEFAULTED)

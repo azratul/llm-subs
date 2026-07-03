@@ -10,8 +10,10 @@ import tempfile
 from collections.abc import Callable
 from pathlib import Path
 
+import pysubs2
+
 from translate_subs import config
-from translate_subs.ai.cli_adapters import CLI_PROVIDERS, make_runner
+from translate_subs.ai.cli_adapters import CLI_PROVIDERS, Runner, make_runner
 from translate_subs.ai.provider import (
     CliTranslationProvider,
     FileHandoffProvider,
@@ -51,7 +53,7 @@ def make_ai_runner(
     model: str | None = None,
     reasoning: str | None = None,
     timeout: int | None = None,
-):
+) -> Runner:
     if provider not in CLI_PROVIDERS:
         supported = ", ".join(CLI_PROVIDERS)
         raise PipelineError(
@@ -120,7 +122,7 @@ def episode_key(origin: Path) -> str:
 
 
 def atomic_save(
-    subs,
+    subs: pysubs2.SSAFile,
     out_path: str | Path,
     fmt: str | None = None,
     *,

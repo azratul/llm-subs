@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 from pydantic import ValidationError
 
@@ -27,7 +28,7 @@ STYLE_GUIDE_FILE = "style_guide.json"
 CONFLICTS_FILE = "conflicts.json"
 
 
-def _load_json(path: Path):
+def _load_json(path: Path) -> Any:
     try:
         return json.loads(path.read_text("utf-8"))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
@@ -104,13 +105,13 @@ class ProjectMemory:
             private=True,
         )
 
-    def load_conflicts(self) -> list[dict]:
+    def load_conflicts(self) -> list[dict[str, Any]]:
         path = self.project_dir / CONFLICTS_FILE
         if not path.exists():
             return []
         return [record.model_dump() for record in _load_conflict_records(path)]
 
-    def write_conflicts(self, conflicts: list[dict]) -> None:
+    def write_conflicts(self, conflicts: list[dict[str, Any]]) -> None:
         try:
             records = [ConflictRecord.model_validate(conflict) for conflict in conflicts]
         except ValidationError as exc:
@@ -118,7 +119,7 @@ class ProjectMemory:
         payload = ConflictsFile(conflicts=records).model_dump_json(indent=2)
         atomic_write_text(self.project_dir / CONFLICTS_FILE, payload, private=True)
 
-    def append_conflicts(self, conflicts: list[dict]) -> None:
+    def append_conflicts(self, conflicts: list[dict[str, Any]]) -> None:
         if not conflicts:
             return
         existing = self.load_conflicts()

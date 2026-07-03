@@ -3,6 +3,7 @@ embedded track (with track selection)."""
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -219,7 +220,7 @@ def select_track(
     lang: str | None,
     track_index: int | None,
     interactive: bool,
-    prompt=input,
+    prompt: Callable[[str], str] = input,
 ) -> SubtitleTrack:
     """Pick a text track by explicit flag, heuristic, or prompt."""
     text_tracks = [t for t in tracks if t.is_text]

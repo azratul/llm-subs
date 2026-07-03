@@ -101,7 +101,7 @@ def resolve(value: str | None, field: str, settings: ProjectSettings) -> str | N
     """Pick `value` if given, else the project setting, else the built-in default (if any)."""
     if value is not None:
         return value
-    from_settings = getattr(settings, field)
+    from_settings: str | None = getattr(settings, field)
     if from_settings is not None:
         return from_settings
     return BUILTIN_DEFAULTS.get(field)

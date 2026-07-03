@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import json
 import time
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 import typer
+from rich.console import Console
 from rich.progress import (
     BarColumn,
     MofNCompleteColumn,
@@ -17,7 +20,11 @@ from rich.progress import (
 )
 from rich.table import Table
 
+from translate_subs.ai.checkpoint import BlockProgress
 from translate_subs.pipeline import DEFAULT_BATCH_GLOBS
+
+_EpisodeCallback = Callable[[int, int, Path], None]
+_ProgressCallback = Callable[[BlockProgress], None]
 
 
 def _fmt_duration(seconds: float) -> str:
@@ -29,7 +36,9 @@ def _fmt_duration(seconds: float) -> str:
     return f"{s}s"
 
 
-def _make_episode_callback(console, label: str = ""):
+def _make_episode_callback(
+    console: Console, label: str = ""
+) -> tuple[_EpisodeCallback, Callable[[], float]]:
     """Return an on_episode callback that tracks timing and prints ETA hints."""
     _EMA_ALPHA = 0.3
     start = [time.perf_counter()]  # mutable cell; [0] = time when current episode began
@@ -59,7 +68,9 @@ def _make_episode_callback(console, label: str = ""):
     return on_episode, total_elapsed
 
 
-def _runtime():
+def _runtime() -> Any:
+    # Shared command runtime; imported lazily to break the cli <-> commands cycle. Typed Any because
+    # it is a dynamically-accessed module facade, not a nominal type.
     from translate_subs import cli
 
     return cli
@@ -139,7 +150,7 @@ def translate(
         "-y",
         help="Do not prompt; resolve by heuristic/flags.",
     ),
-):
+) -> None:
     """Translate a subtitle and export <base>.<lang>.<format> (lang from --target)."""
     runtime = _runtime()
     overrides = runtime._project_overrides(ctx, project)
@@ -151,7 +162,7 @@ def translate(
     format = overrides.get("format", format)
     runtime._warn_weak_backend(provider)
 
-    def run(on_progress=None):
+    def run(on_progress: _ProgressCallback | None = None) -> Any:
         return runtime.translate_subtitle(
             input,
             target=target,
@@ -187,7 +198,7 @@ def translate(
             ) as progress:
                 task = progress.add_task("Setting up…", total=None)
 
-                def on_progress(event) -> None:
+                def on_progress(event: BlockProgress) -> None:
                     progress.update(
                         task,
                         completed=event.done,
@@ -327,7 +338,7 @@ def batch(
         "Produces better translations because the full character/glossary context is "
         "available before any episode is translated.",
     ),
-):
+) -> None:
     """Translate every matching file in a directory, continuing past per-episode failures."""
     runtime = _runtime()
 

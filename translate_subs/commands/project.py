@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import typer
 from pydantic import ValidationError
 from rich.table import Table
 
+from translate_subs.memory.compact import AliasMatch
 from translate_subs.settings import ProjectSettings, load_settings, save_settings
 
 _CONFLICT_HELP = "On contradicting suggestions: ask | keep | overwrite | flag."
@@ -25,7 +27,9 @@ _AUX_DEFAULTED = (
 )
 
 
-def _runtime():
+def _runtime() -> Any:
+    # Shared command runtime; imported lazily to break the cli <-> commands cycle. Typed Any because
+    # it is a dynamically-accessed module facade, not a nominal type.
     from translate_subs import cli
 
     return cli
@@ -59,7 +63,7 @@ def config(
     unset: list[str] = typer.Option(
         [], "--unset", help="Field name(s) to clear back to the built-in default (repeatable)."
     ),
-):
+) -> None:
     """Show or set per-project default options (settings.json).
 
     With no flags it prints the current settings; flags set defaults that `translate` and `batch`
@@ -133,7 +137,7 @@ def analyze(
     non_interactive: bool = typer.Option(
         False, "--non-interactive", "--yes", "-y", help="Do not prompt; resolve by heuristic/flags."
     ),
-):
+) -> None:
     """Analyze the episode (writes episode.context.json) and update series memory."""
     runtime = _runtime()
     policy = runtime._resolve_policy(on_conflict, non_interactive)
@@ -188,7 +192,7 @@ def update_memory_command(
     non_interactive: bool = typer.Option(
         False, "--non-interactive", "--yes", "-y", help="Do not prompt; resolve by heuristic/flags."
     ),
-):
+) -> None:
     """Re-merge an existing episode.context.json into series memory (no LLM call)."""
     runtime = _runtime()
     policy = runtime._resolve_policy(on_conflict, non_interactive)
@@ -228,13 +232,13 @@ def compact_memory_command(
         "-y",
         help="Auto-apply all detected aliases without prompting.",
     ),
-):
+) -> None:
     """Prune redundant series memory; with --provider also detects character aliases via LLM."""
     runtime = _runtime()
     if provider:  # the LLM runs only when a provider is given
         runtime._warn_weak_backend(provider)
 
-    def alias_confirm(match) -> str:
+    def alias_confirm(match: AliasMatch) -> str:
         if non_interactive:
             return "apply"
         runtime.console.print(
@@ -278,7 +282,7 @@ def project_status_command(
     project: str = typer.Argument(..., help="Project/series name."),
     target: str = typer.Option("es-latam", help="Target language/variant whose state to show."),
     json_out: bool = typer.Option(False, "--json", help="Emit the status as JSON."),
-):
+) -> None:
     """Show a project's stored state for a target: memory, analyzed episodes, checkpoints, outputs.
 
     Reads only what is on disk (no LLM call, no source access). Output staleness is not recomputed
@@ -354,7 +358,7 @@ def resolve_conflicts_command(
     target: str = typer.Option(
         "es-latam", help="Target language/variant whose conflicts to resolve."
     ),
-):
+) -> None:
     """Walk flagged memory conflicts and resolve each (keep stored / use suggested / skip)."""
     runtime = _runtime()
     try:

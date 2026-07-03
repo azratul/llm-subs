@@ -85,7 +85,7 @@ from translate_subs.workflows.support import (
     review_path as _review_path,
 )
 from translate_subs.workflows.translation import (
-    DEFAULT_BATCH_GLOBS,
+    DEFAULT_BATCH_GLOBS as DEFAULT_BATCH_GLOBS,  # explicit re-export from the facade
 )
 from translate_subs.workflows.translation import (
     batch_analyze as _batch_analyze,

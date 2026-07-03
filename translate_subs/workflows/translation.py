@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 from translate_subs import config
 from translate_subs.ai.analysis import EpisodeContext, output_source_digest, source_digest
@@ -15,9 +16,9 @@ from translate_subs.ai.checkpoint import (
     translate_with_checkpoint,
 )
 from translate_subs.ai.cli_adapters import CLI_PROVIDERS
+from translate_subs.ai.job_protocol import JobLine
 from translate_subs.ai.provider import (
     ProviderError,
-    TranslationProvider,
     is_per_episode_failure,
 )
 from translate_subs.io.media_probe import MediaToolError
@@ -47,6 +48,7 @@ from translate_subs.workflows.models import (
     AnalysisCurrentError,
     AnalyzeBatchItem,
     AnalyzeBatchResult,
+    AnalyzeResult,
     BatchItem,
     BatchResult,
     ModifiedOutputError,
@@ -65,6 +67,12 @@ from translate_subs.workflows.output_manifest import (
     tool_version,
     write_manifest,
 )
+from translate_subs.workflows.seams import (
+    DiscoverInputsFn,
+    ProviderFactory,
+    ResolveSourceFn,
+    ValidateOutputFn,
+)
 from translate_subs.workflows.support import (
     atomic_save,
     context_path,
@@ -78,7 +86,11 @@ _EXPECTED_PIPELINE_ERRORS = (ProviderError, SourceError, MediaToolError, OSError
 # API-backed providers that benefit from parallel block translation (pure HTTP, no subprocess).
 _API_PROVIDERS = frozenset({"ollama", "litellm"})
 _DEFAULT_API_PARALLEL = 4
-ProviderFactory = Callable[..., TranslationProvider]
+# Per-episode batch seams: `batch_*` forwards an arbitrary `**kwargs` to these, so they stay loose
+# `Callable[..., X]` (a fixed Protocol signature would reject the concrete facade functions). The
+# construction seams below are typed precisely as Protocols (see `workflows/seams.py`).
+TranslateFn = Callable[..., TranslateResult]
+AnalyzeFn = Callable[..., AnalyzeResult]
 
 
 def _same_path(a: str | Path, b: str | Path) -> bool:
@@ -108,9 +120,9 @@ def translate_subtitle(
     parallel: int | None = None,
     timeout: int | None = None,
     on_progress: Callable[[BlockProgress], None] | None = None,
-    resolve_source_fn,
+    resolve_source_fn: ResolveSourceFn,
     provider_factory: ProviderFactory,
-    validate_output_fn,
+    validate_output_fn: ValidateOutputFn,
 ) -> TranslateResult:
     """Resolve the source, translate by blocks and export the requested subtitle format."""
     if fmt not in SUPPORTED_FORMATS:
@@ -226,7 +238,7 @@ def translate_subtitle(
                 )
         raise OutputExistsError(f"Output already exists: {out_file}. Use --force to overwrite.")
 
-    def rules_for(lines):
+    def rules_for(lines: list[JobLine]) -> list[str]:
         text = " ".join(line.text for line in lines)
         speakers = [line.speaker for line in lines]
         return base_rules + rules_for_text(memory_rules, text, speakers)
@@ -324,9 +336,9 @@ def batch_analyze(
     globs: tuple[str, ...] = DEFAULT_BATCH_GLOBS,
     recursive: bool = False,
     on_episode: Callable[[int, int, Path], None] | None = None,
-    discover_inputs_fn=discover_inputs,
-    analyze_fn,
-    **analyze_kwargs,
+    discover_inputs_fn: DiscoverInputsFn = discover_inputs,
+    analyze_fn: AnalyzeFn,
+    **analyze_kwargs: Any,
 ) -> AnalyzeBatchResult:
     """Analyze matching inputs to build series memory, continuing past per-file failures.
 
@@ -363,9 +375,9 @@ def batch_translate(
     globs: tuple[str, ...] = DEFAULT_BATCH_GLOBS,
     recursive: bool = False,
     on_episode: Callable[[int, int, Path], None] | None = None,
-    discover_inputs_fn=discover_inputs,
-    translate_fn,
-    **translate_kwargs,
+    discover_inputs_fn: DiscoverInputsFn = discover_inputs,
+    translate_fn: TranslateFn,
+    **translate_kwargs: Any,
 ) -> BatchResult:
     """Translate matching inputs independently, continuing after per-file failures."""
     target = translate_kwargs.get("target", config.DEFAULT_TARGET)

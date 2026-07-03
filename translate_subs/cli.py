@@ -5,6 +5,7 @@ from __future__ import annotations
 import subprocess
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as _pkg_version
+from typing import Any
 
 import typer
 from rich.console import Console
@@ -98,7 +99,7 @@ def _conflict_resolver(conflict: Conflict) -> bool:
     )
 
 
-def _interactive_conflict_choice(conflict: dict) -> ConflictChoice:
+def _interactive_conflict_choice(conflict: dict[str, Any]) -> ConflictChoice:
     """Prompt for one flagged conflict; returns 'keep' | 'use' | 'skip'."""
     console.print(
         f"\n[yellow]Conflict ({conflict.get('kind')})[/yellow] on "

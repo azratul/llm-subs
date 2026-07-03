@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from translate_subs.ai.analysis import EpisodeContext
 from translate_subs.io.source_resolver import ResolvedSource
@@ -202,4 +202,4 @@ class TightenResult:
 
 
 ConflictChoice = Literal["keep", "use", "skip"]
-ConflictPrompt = Callable[[dict], ConflictChoice]
+ConflictPrompt = Callable[[dict[str, Any]], ConflictChoice]

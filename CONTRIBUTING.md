@@ -20,7 +20,7 @@ All must pass; CI enforces them on Python 3.11–3.14:
 ```bash
 uv run ruff check translate_subs/ tests/
 uv run ruff format --check translate_subs/ tests/   # run `ruff format` (no --check) to fix
-uv run mypy translate_subs/
+uv run mypy translate_subs/          # strict mode (configured in pyproject [tool.mypy])
 uv run pytest -q
 ```
 

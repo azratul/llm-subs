@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import shutil
 from pathlib import Path
+from typing import Any
 
 import typer
 from rich.table import Table
@@ -19,7 +20,10 @@ def _emit_json(payload: object) -> None:
     typer.echo(json.dumps(payload, ensure_ascii=False, indent=2))
 
 
-def _runtime():
+def _runtime() -> Any:
+    # The `cli` module is the shared command runtime (console, error tuple, workflow facades).
+    # Imported lazily to break the cli <-> commands import cycle; typed as Any because it is a
+    # dynamically-accessed module facade, not a nominal type.
     from translate_subs import cli
 
     return cli
@@ -39,7 +43,7 @@ def _dir_size(path: Path) -> tuple[int, int]:
     return files, total
 
 
-def probe(media: Path = typer.Argument(..., help="Video file to inspect.")):
+def probe(media: Path = typer.Argument(..., help="Video file to inspect.")) -> None:
     """List the embedded subtitle tracks of a container."""
     runtime = _runtime()
     try:
@@ -79,7 +83,7 @@ def doctor(
         help="With --provider ollama, also verify this model is installed on the server.",
     ),
     json_out: bool = typer.Option(False, "--json", help="Emit results as JSON instead of a table."),
-):
+) -> None:
     """Check the environment: media tools, writable data/cache dirs, optional provider."""
     runtime = _runtime()
     checks = run_diagnostics(provider, model)
@@ -109,7 +113,7 @@ def doctor(
 
 def purge_cache(
     yes: bool = typer.Option(False, "--yes", "-y", help="Delete without the confirmation prompt."),
-):
+) -> None:
     """Delete cached subtitle tracks extracted from video containers.
 
     The cache (`$XDG_CACHE_HOME/llm-subs/work`) only holds subtitle tracks demuxed from media so a
@@ -147,7 +151,7 @@ def purge_cache(
 def validate(
     subtitle: Path = typer.Argument(..., help="Subtitle file to validate."),
     json_out: bool = typer.Option(False, "--json", help="Emit the result as JSON."),
-):
+) -> None:
     """Structurally validate a subtitle file (parseable, timings, no leftover markup)."""
     runtime = _runtime()
     try:

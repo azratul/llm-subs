@@ -80,6 +80,7 @@ select = ["E", "F", "I", "UP", "B"]
 
 [tool.mypy]
 python_version = "3.11"
+strict = true                       # single source of truth: `mypy translate_subs/` is strict
 ignore_missing_imports = true       # pysubs2/litellm ship no type stubs
 warn_unused_ignores = true
 exclude = ["tests/"]

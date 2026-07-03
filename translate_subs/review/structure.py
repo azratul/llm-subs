@@ -3,23 +3,29 @@
 from __future__ import annotations
 
 from collections import Counter
+from typing import Any
 
+import pysubs2
+
+from translate_subs.domain.models import TranslatableUnit
 from translate_subs.review.models import Finding, ReviewLine
 from translate_subs.subs.extractor import is_translatable
 
 ALIGN_TOLERANCE_MS = 10
 
 
-def _style_signature(subs, event) -> tuple[str, dict | None]:
+def _style_signature(
+    subs: pysubs2.SSAFile, event: pysubs2.SSAEvent
+) -> tuple[str, dict[str, Any] | None]:
     style = subs.styles.get(event.style)
     return event.style, style.as_dict() if style is not None else None
 
 
 def pair_lines(
-    units,
-    target_subs,
+    units: list[TranslatableUnit],
+    target_subs: pysubs2.SSAFile,
     *,
-    source_subs=None,
+    source_subs: pysubs2.SSAFile | None = None,
     compare_styles: bool = False,
     sequential: bool = False,
 ) -> tuple[list[ReviewLine], list[Finding]]:

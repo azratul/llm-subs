@@ -30,6 +30,7 @@ from translate_subs.subs.reinserter import replace_visible_text
 from translate_subs.subs.validator import ValidationResult, validate_file, validate_output
 from translate_subs.workflows.models import PipelineError, ReviewResult, TightenResult
 from translate_subs.workflows.output_manifest import refresh_output_manifest
+from translate_subs.workflows.seams import ResolveSourceFn, RunnerFactory
 from translate_subs.workflows.support import (
     atomic_save,
     context_path,
@@ -41,7 +42,7 @@ from translate_subs.workflows.support import (
     review_path,
 )
 
-RunnerFactory = Callable[..., Callable[[str], str]]
+Runner = Callable[[str], str]  # injected pre-built runner for the review LLM pass
 # Consulted before an --apply run overwrites lines: receives the planned (id, before, after)
 # replacements and returns whether to write them. None keeps the caller's old behaviour (apply
 # without prompting), so only the CLI, which passes a real gate, prompts for confirmation.
@@ -65,8 +66,8 @@ def review_translation(
     model: str | None = None,
     reasoning: str | None = None,
     max_retries: int = 2,
-    runner=None,
-    resolve_source_fn,
+    runner: Runner | None = None,
+    resolve_source_fn: ResolveSourceFn,
     ai_runner_factory: RunnerFactory,
 ) -> ReviewResult:
     try:
@@ -263,7 +264,7 @@ def tighten_subtitle(
     model: str | None = None,
     reasoning: str | None = None,
     max_retries: int = 2,
-    runner=None,
+    runner: Runner | None = None,
     ai_runner_factory: RunnerFactory,
 ) -> TightenResult:
     try:

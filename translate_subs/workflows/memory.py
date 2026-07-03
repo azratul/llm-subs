@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 from translate_subs import config
 from translate_subs.ai.analysis import (
@@ -40,11 +41,14 @@ from translate_subs.workflows.models import (
     ResolveConflictsResult,
     UpdateMemoryResult,
 )
+from translate_subs.workflows.seams import ResolveSourceFn, RunnerFactory
 from translate_subs.workflows.support import (
     context_path,
     memory_root,
     project_episode,
 )
+
+Runner = Callable[[str], str]  # injected pre-built runner for the analyze/review passes
 
 
 def prior_known(project_memory: ProjectMemory) -> str | None:
@@ -94,9 +98,9 @@ def analyze_subtitle(
     reasoning: str | None = None,
     max_retries: int = 2,
     skip_if_current: bool = False,
-    runner=None,
-    resolve_source_fn,
-    ai_runner_factory,
+    runner: Runner | None = None,
+    resolve_source_fn: ResolveSourceFn,
+    ai_runner_factory: RunnerFactory,
 ) -> AnalyzeResult:
     try:
         validate_target(target)
@@ -185,7 +189,7 @@ def update_memory(
     interactive: bool = True,
     on_conflict: ConflictPolicy = "flag",
     conflict_resolver: ConflictResolver | None = None,
-    resolve_source_fn,
+    resolve_source_fn: ResolveSourceFn,
 ) -> UpdateMemoryResult:
     source = resolve_source_fn(
         input_path,
@@ -222,7 +226,7 @@ def compact_memory(
     reasoning: str | None = None,
     max_retries: int = 2,
     alias_confirm: Callable[..., str] | None = None,
-    ai_runner_factory=None,
+    ai_runner_factory: RunnerFactory | None = None,
 ) -> CompactMemoryResult:
     project_path = memory_root(project, target)
     if not project_path.exists():
@@ -300,7 +304,7 @@ def project_status(project: str, target: str = "es-latam") -> ProjectStatusResul
     )
 
 
-def _apply_conflict_choice(project_memory: ProjectMemory, conflict: dict) -> bool:
+def _apply_conflict_choice(project_memory: ProjectMemory, conflict: dict[str, Any]) -> bool:
     kind = conflict.get("kind")
     key = conflict.get("key", "")
     suggested = conflict.get("suggested", "")
@@ -326,7 +330,7 @@ def resolve_conflicts(
     if not conflicts:
         return ResolveConflictsResult(project_dir=project_path, resolved=0, remaining=0)
 
-    remaining: list[dict] = []
+    remaining: list[dict[str, Any]] = []
     resolved = 0
     changed = False
     for conflict in conflicts:

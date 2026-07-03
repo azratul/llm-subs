@@ -53,7 +53,7 @@ jobs:
         run: uv run ruff format --check translate_subs/ tests/
 
       - name: Type-check (mypy)
-        run: uv run mypy translate_subs/
+        run: uv run mypy translate_subs/   # strict = true is set in [tool.mypy]
 
       - name: Tests (with coverage report)
         run: uv run pytest -q --cov=translate_subs --cov-branch --cov-report=term-missing --cov-fail-under=85

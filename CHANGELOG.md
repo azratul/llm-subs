@@ -20,6 +20,17 @@ All notable changes to this project are documented here. The format follows
   was generated (its hash no longer matches) and refuse to overwrite it without `--force`; `batch`
   reports such an episode as `modified`. Protects manual corrections from being silently clobbered.
 - CI enforces a branch-coverage floor (`--cov-branch --cov-fail-under=85`) as a regression net.
+- The whole package now type-checks cleanly under **strict mypy** (0 errors, down from 73). Strict
+  mode is set once in `[tool.mypy]` (`strict = true`), so a plain `mypy translate_subs/` — in CI, the
+  release workflow, and the docs — is strict with no per-invocation flag to drift. The shipped
+  `py.typed` API is now fully annotated:
+  command callbacks return `-> None` and generic containers are parameterised. The injected
+  dependency seams (`resolve_source_fn`, `provider_factory`, `validate_output_fn`,
+  `ai_runner_factory`, `discover_inputs_fn`) are typed as **`Protocol`s** with explicit `__call__`
+  signatures (`workflows/seams.py`), so mypy verifies the keyword arguments at every call site *and*
+  that the concrete facade functions match — a check the earlier `Callable[..., X]` aliases skipped.
+  The per-episode `translate_fn`/`analyze_fn` batch seams stay `Callable[..., X]` by design (`batch_*`
+  forwards an arbitrary `**kwargs` a fixed signature couldn't express). No runtime behaviour changed.
 - The output manifest now records the **resolved model** the runner will actually use, not the
   (possibly unset) `--model` flag: with `--model` omitted, a CLI provider's built-in default (e.g.
   `claude-opus-4-8`) is stored instead of an empty string, so a later change to that default flags

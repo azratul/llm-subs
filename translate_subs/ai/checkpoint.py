@@ -23,10 +23,11 @@ from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from translate_subs.ai.job_protocol import TranslationJobIn
+from translate_subs.ai.job_protocol import JobLine, TranslationJobIn
 from translate_subs.ai.provider import TRANSLATION_PROMPT_VERSION, TranslationProvider
 from translate_subs.fsutil import atomic_write_text
 
@@ -36,7 +37,7 @@ CHECKPOINT_VERSION = 3
 CHECKPOINT_FILE = "translations.checkpoint.json"
 
 
-def _lines(lines) -> list[dict]:
+def _lines(lines: list[JobLine]) -> list[dict[str, Any]]:
     return [{"id": line.id, "speaker": line.speaker, "text": line.text} for line in lines]
 
 
