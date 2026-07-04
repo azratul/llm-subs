@@ -6,6 +6,7 @@ import pysubs2
 import pytest
 
 from translate_subs import config, pipeline
+from translate_subs.ai.provider import ProviderError
 from translate_subs.review.checks import (
     check_glossary,
     check_line_length,
@@ -125,6 +126,20 @@ def test_parse_findings_treats_string_false_as_not_auto():
     )
     findings = parse_findings(raw)
     assert [f.auto for f in findings] == [False, True, True]
+
+
+def test_parse_findings_schema_violation_is_retryable_content_error():
+    # A finding that breaks the schema (unknown scope, non-string suggested) is the same class of
+    # fault as unparseable JSON: it must surface as retryable content, not a pydantic traceback —
+    # otherwise one bad reply is never retried while a syntax error in the same reply would be.
+    for bad in (
+        [{"scope": "paragraph", "kind": "other", "message": "x"}],
+        [{"scope": "line", "kind": "other", "message": "x", "suggested": {"text": "y"}}],
+    ):
+        with pytest.raises(ProviderError) as exc_info:
+            parse_findings(json.dumps(bad))
+        assert exc_info.value.retryable
+        assert exc_info.value.category == "content"
 
 
 def test_is_single_span_edit():

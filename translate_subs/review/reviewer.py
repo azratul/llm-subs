@@ -13,6 +13,8 @@ from collections.abc import Callable
 from difflib import SequenceMatcher
 from functools import partial
 
+from pydantic import ValidationError
+
 from translate_subs.ai.claude_cli import extract_json
 from translate_subs.ai.provider import ProviderError, retry_provider_call
 from translate_subs.review.models import Finding, ReviewLine
@@ -139,17 +141,27 @@ def parse_findings(raw: str) -> list[Finding]:
     for item in data:
         if not isinstance(item, dict):
             continue
-        findings.append(
-            Finding(
-                scope=item.get("scope", "line"),
-                id=item.get("id"),
-                kind=str(item.get("kind", "other")),
-                message=str(item.get("message", "")),
-                current=item.get("current"),
-                suggested=item.get("suggested"),
-                auto=_as_bool(item.get("auto_safe", False)),
+        try:
+            findings.append(
+                Finding(
+                    scope=item.get("scope", "line"),
+                    id=item.get("id"),
+                    kind=str(item.get("kind", "other")),
+                    message=str(item.get("message", "")),
+                    current=item.get("current"),
+                    suggested=item.get("suggested"),
+                    auto=_as_bool(item.get("auto_safe", False)),
+                )
             )
-        )
+        except ValidationError as exc:
+            # A schema-invalid finding (e.g. an unknown `scope`, a non-string `suggested`) is the
+            # same class of fault as unparseable JSON: the model broke the reply contract for this
+            # call, so surface it as retryable content instead of a raw pydantic traceback.
+            raise ProviderError(
+                f"Review finding failed schema validation: {exc}",
+                retryable=True,
+                category="content",
+            ) from exc
     return findings
 
 

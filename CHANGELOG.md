@@ -27,6 +27,10 @@ All notable changes to this project are documented here. The format follows
   against the same environment as the main job — the floors were never exercised. The test step
   now runs with `--no-sync`; verified locally that the suite passes against the real floors
   (pydantic 2.7.0, pysubs2 1.8.0, typer 0.15.4), so no floor needed bumping.
+- **A schema-invalid review finding is now retried like any other malformed reply.** A model
+  returning an unknown `scope` or a non-string `suggested` raised a raw pydantic
+  `ValidationError` out of `parse_findings`, skipping the retry that an unparseable-JSON reply
+  in the same position would get; it now surfaces as a retryable content `ProviderError`.
 
 ## [0.7.0] - 2026-07-04
 
