@@ -18,9 +18,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import sys
 import threading
 from collections.abc import Callable
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -228,8 +229,9 @@ def _translate_parallel(
         return job.block_id, h, block_translations, block_untranslated
 
     executor = ThreadPoolExecutor(max_workers=parallel)
+    futures: list[Future[tuple[str, str, dict[str, str], list[str]]]] = []
     try:
-        futures = [executor.submit(_do_block, job) for job in pending]
+        futures.extend(executor.submit(_do_block, job) for job in pending)
         for future in as_completed(futures):
             block_id, _h, block_translations, block_untranslated = future.result()
             translations.update(block_translations)
@@ -242,10 +244,19 @@ def _translate_parallel(
         # On the first failed block (or Ctrl-C), surface the error NOW: cancel the blocks not
         # yet started and do not wait for the in-flight ones — a `with` block
         # (shutdown(wait=True)) would sit silent for up to the per-block timeout before the
-        # user sees anything. An in-flight HTTP call can't be interrupted mid-request; it
-        # finishes in a background thread and still persists its block via save_entry, so
-        # nothing is lost for the resume.
+        # user sees anything. An in-flight HTTP call can't be interrupted mid-request (threads
+        # can't be killed): it finishes in a background thread and still persists its block via
+        # save_entry, so nothing is lost for the resume — but the interpreter joins worker
+        # threads at exit, so the *process* lingers until they return. Say so on stderr, or the
+        # pause after the error message reads as a hang.
         executor.shutdown(wait=False, cancel_futures=True)
+        in_flight = sum(1 for f in futures if f.running())
+        if in_flight:
+            print(
+                f"note: {in_flight} in-flight block call(s) still finishing in the background; "
+                f"completed results are saved to the checkpoint for the next resume.",
+                file=sys.stderr,
+            )
         raise
     executor.shutdown()
     return translations, untranslated

@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import subprocess
 import sys
 import urllib.error
 import urllib.request
@@ -22,6 +23,7 @@ from pathlib import Path
 from typing import Literal
 
 from translate_subs import config
+from translate_subs.ai.api_adapters import host_is_loopback
 from translate_subs.fsutil import ensure_private_dir
 
 Status = Literal["ok", "warn", "fail"]
@@ -145,6 +147,20 @@ def _path_checks() -> list[Check]:
 def _ollama_check(model: str | None = None) -> Check:
     host = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
     base = host if host.startswith("http") else f"http://{host}"
+    check = _ollama_server_check(base, model)
+    # The provider's privacy pitch (subtitle text never leaves the machine) only holds for a
+    # loopback host; $OLLAMA_HOST pointing elsewhere silently turns "local" into a network send.
+    if check.status == "ok" and not host_is_loopback(base):
+        return Check(
+            "ollama",
+            "warn",
+            f"{check.detail} — remote host: subtitle text will be sent to it over HTTP "
+            f"(the 'local and private' notes apply only to a server on this machine).",
+        )
+    return check
+
+
+def _ollama_server_check(base: str, model: str | None) -> Check:
     url = f"{base.rstrip('/')}/api/tags"
     try:
         with urllib.request.urlopen(url, timeout=5) as resp:  # noqa: S310 - local server URL
@@ -192,15 +208,55 @@ def _litellm_check() -> Check:
     return Check("litellm", "ok", "package importable")
 
 
+def _cli_binary_version(path: str) -> str | None:
+    """First line of `<cli> --version`, or None when it can't be read.
+
+    Best-effort: doctor must never throw, and some CLIs may not support the flag. The version
+    pins down "works here / fails there" reports far better than a bare path.
+    """
+    try:
+        proc = subprocess.run([path, "--version"], capture_output=True, text=True, timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if proc.returncode != 0:
+        return None
+    first_line = (proc.stdout.strip() or proc.stderr.strip()).splitlines()
+    return first_line[0].strip() if first_line else None
+
+
+def _effective_model(provider: str, model: str | None) -> str | None:
+    """The model the runner would actually use — the built-in default when --model is omitted.
+
+    Construction is side-effect-free (no network); runners without an exposed model (the CLIs
+    that pick one internally) yield None.
+    """
+    from translate_subs.ai.cli_adapters import make_runner
+
+    try:
+        resolved = getattr(make_runner(provider, model), "model", None)
+    except Exception:
+        return None
+    return resolved if isinstance(resolved, str) and resolved else None
+
+
 def _provider_check(provider: str, model: str | None = None) -> Check:
     if provider in ("identity", "file-handoff"):
         return Check(provider, "ok", "no external backend required")
     if provider in _CLI_BINARIES:
         binary = _CLI_BINARIES[provider]
         path = shutil.which(binary)
-        if path:
-            return Check(provider, "ok", path)
-        return Check(provider, "fail", f"`{binary}` CLI not found on PATH.")
+        if path is None:
+            return Check(provider, "fail", f"`{binary}` CLI not found on PATH.")
+        detail = path
+        version = _cli_binary_version(path)
+        if version:
+            detail += f" ({version})"
+        effective = _effective_model(provider, model)
+        if effective:
+            detail += f"; model: {effective}"
+        elif model is None:
+            detail += "; model: chosen by the CLI (pass --model to pin it)"
+        return Check(provider, "ok", detail)
     if provider == "ollama":
         return _ollama_check(model)
     if provider == "litellm":

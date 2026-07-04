@@ -19,7 +19,10 @@ The tool extracts the *visible text* of each line and sends it to the backend yo
 - **Agent CLIs** (`claude`, `codex`, `antigravity`, `opencode`) and **`litellm`** with a hosted
   model send the text to that provider. Treat this like any third-party API: the content may
   be transmitted, logged, or retained per that provider's policy.
-- **`ollama`** (and `litellm` pointed at a local model) keeps everything on your machine.
+- **`ollama`** (and `litellm` pointed at a local model) keeps everything on your machine —
+  **provided the server is local**. `$OLLAMA_HOST` can just as well point at a remote server,
+  and then the text is sent to it over HTTP like any other remote backend;
+  `doctor --provider ollama` flags a non-loopback host for exactly this reason.
 
 If your subtitles are sensitive, prefer a local backend.
 

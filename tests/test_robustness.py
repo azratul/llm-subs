@@ -858,6 +858,48 @@ def test_doctor_provider_check_passthrough_needs_no_backend():
     assert diagnostics._provider_check("file-handoff").status == "ok"
 
 
+def test_doctor_cli_provider_reports_version_and_effective_model(monkeypatch):
+    # A bare binary path can't distinguish "works here / fails there" reports; the CLI's own
+    # version and the model the runner would actually use pin the environment down.
+    import subprocess as subprocess_mod
+
+    from translate_subs import diagnostics
+
+    monkeypatch.setattr(diagnostics.shutil, "which", lambda name: f"/usr/bin/{name}")
+
+    def fake_version(cmd, capture_output=True, text=True, timeout=10):
+        return subprocess_mod.CompletedProcess(cmd, 0, stdout="2.1.7 (Claude Code)\n", stderr="")
+
+    monkeypatch.setattr(diagnostics.subprocess, "run", fake_version)
+
+    check = diagnostics._provider_check("claude")
+    assert check.status == "ok"
+    assert "2.1.7 (Claude Code)" in check.detail
+    # No --model: the runner's built-in default is what a run would actually use.
+    assert "model: claude-opus-4-8" in check.detail
+
+    pinned = diagnostics._provider_check("claude", model="claude-sonnet-5")
+    assert "model: claude-sonnet-5" in pinned.detail
+
+    # codex picks its model internally when --model is omitted: say so instead of guessing.
+    codex = diagnostics._provider_check("codex")
+    assert "chosen by the CLI" in codex.detail
+
+
+def test_doctor_cli_provider_tolerates_unreadable_version(monkeypatch):
+    from translate_subs import diagnostics
+
+    monkeypatch.setattr(diagnostics.shutil, "which", lambda name: "/usr/bin/agy")
+
+    def boom(cmd, capture_output=True, text=True, timeout=10):
+        raise OSError("exec format error")
+
+    monkeypatch.setattr(diagnostics.subprocess, "run", boom)
+    check = diagnostics._provider_check("antigravity")
+    assert check.status == "ok"  # doctor never throws; the path alone is still useful
+    assert check.detail.startswith("/usr/bin/agy")
+
+
 def test_doctor_warns_antigravity_weak_isolation(monkeypatch):
     from translate_subs import diagnostics
 
@@ -923,6 +965,8 @@ def test_doctor_ollama_checks_model_presence(monkeypatch):
         return io.BytesIO(payload)
 
     monkeypatch.setattr(diagnostics.urllib.request, "urlopen", fake_urlopen)
+    # Hermetic: an ambient $OLLAMA_HOST naming a remote box would add the non-loopback warn.
+    monkeypatch.delenv("OLLAMA_HOST", raising=False)
 
     # Bare-name match against a tagged model.
     assert diagnostics._ollama_check("qwen3").status == "ok"
@@ -931,6 +975,38 @@ def test_doctor_ollama_checks_model_presence(monkeypatch):
     assert missing.status == "fail" and "not installed" in missing.detail
     # No model requested: still ok, lists what's there.
     assert diagnostics._ollama_check().status == "ok"
+
+
+def test_doctor_ollama_flags_remote_host(monkeypatch):
+    # "Local and private" only holds for a loopback host; a remote $OLLAMA_HOST must be flagged.
+    import io
+    import json
+
+    from translate_subs import diagnostics
+
+    payload = json.dumps({"models": [{"name": "qwen3:4b"}]}).encode()
+    monkeypatch.setattr(
+        diagnostics.urllib.request, "urlopen", lambda url, timeout=5: io.BytesIO(payload)
+    )
+
+    monkeypatch.setenv("OLLAMA_HOST", "http://gpu-box.lan:11434")
+    remote = diagnostics._ollama_check("qwen3:4b")
+    assert remote.status == "warn"
+    assert "remote host" in remote.detail
+
+    monkeypatch.setenv("OLLAMA_HOST", "http://127.0.0.1:11434")
+    assert diagnostics._ollama_check("qwen3:4b").status == "ok"
+
+
+def test_host_is_loopback():
+    from translate_subs.ai.api_adapters import host_is_loopback
+
+    assert host_is_loopback("http://localhost:11434")
+    assert host_is_loopback("http://127.0.0.1:11434")
+    assert host_is_loopback("http://[::1]:11434")
+    assert not host_is_loopback("http://gpu-box.lan:11434")
+    assert not host_is_loopback("https://ollama.example.com")
+    assert not host_is_loopback("http://192.168.1.20:11434")
 
 
 @pytest.mark.parametrize("body", ["[]", '{"models": null}', '{"models": [null]}', '"oops"'])

@@ -43,6 +43,12 @@ All notable changes to this project are documented here. The format follows
   stale once (regenerate with `--force`).
 
 ### Added
+- **`doctor --provider <cli>` reports the CLI's version and effective model**, not just its path.
+  The version pins down "works here / fails there" reports; the model shown is what a run would
+  actually use — the runner's built-in default when `--model` is omitted (e.g. `claude` →
+  `claude-opus-4-8`) — and for the CLIs that pick a model internally (`codex`, `antigravity`,
+  `opencode`) it says so explicitly instead of guessing. Best-effort: an unreadable `--version`
+  falls back to the bare path, never an error.
 - **`doctor --fix`**: repair what `doctor` can instead of only printing a `chmod` to run by hand.
   State/cache entries left group/other-readable by an older release (they may carry subtitle text)
   are tightened to owner-only; the fix runs before the checks, so the permissions check reports the
@@ -99,6 +105,20 @@ All notable changes to this project are documented here. The format follows
   fingerprint alone.
 
 ### Changed
+- **"Local and private" Ollama is now honest about `$OLLAMA_HOST`.** The privacy pitch — subtitle
+  text never leaves the machine — only holds for a loopback host, but the variable can just as
+  well name a remote server. The docs say so now, and `doctor --provider ollama` downgrades a
+  reachable non-loopback host to a warning ("remote host: subtitle text will be sent to it").
+- **A parallel-run failure now says why the process may linger.** The error itself already
+  surfaces immediately, but Python cannot kill a thread: the interpreter joins in-flight
+  block calls at exit, so after the error message the process can sit for up to the per-block
+  timeout looking hung. A stderr note now reports how many in-flight calls are still finishing
+  in the background (their results are checkpointed for the resume either way).
+- **CI/release hygiene.** Every job now has a `timeout-minutes` (a hung step fails in minutes
+  instead of consuming GitHub's six-hour ceiling), CI runs for a superseded push are cancelled
+  (`concurrency` per ref), and the `uv` binary the workflows install is version-pinned — the
+  setup action was already SHA-pinned, but without a version it installed the latest uv at run
+  time. The `litellm` extra gains the same next-major cap as every other dependency (`<2`).
 - **The sdist now ships the test suite**, so distro packagers and `pip download` users can run
   `pytest` against their own environment instead of trusting our CI's. The suite is hermetic
   without the repo's media fixtures (ffmpeg-dependent tests build their own or skip); `media/`

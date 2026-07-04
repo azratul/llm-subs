@@ -9,6 +9,11 @@ on:
 permissions:
   contents: read
 
+# A superseded push doesn't need its CI run finished; cancel it and run the new head only.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 # Third-party actions are pinned by commit SHA (version in the comment) so a moved tag
 # can't silently change what runs in CI.
 jobs:
@@ -17,6 +22,7 @@ jobs:
     # macOS and Windows job. Most tests fake the media layer, but test_ffmpeg_integration.py muxes
     # a real .mkv and runs whenever ffmpeg is present (skipped otherwise), so the binary is
     # installed on Linux to exercise that real extraction path.
+    timeout-minutes: 20
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -35,6 +41,7 @@ jobs:
         uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
         with:
           enable-cache: true
+          version: "0.11.8"  # pin the uv binary too; the SHA above only pins the action
 
       - name: Verify lockfile is current
         run: uv lock --check
@@ -59,11 +66,14 @@ jobs:
         run: uv run pytest -q --cov=translate_subs --cov-branch --cov-report=term-missing --cov-fail-under=85
 
   audit:
+    timeout-minutes: 10
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - name: Install uv
         uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+        with:
+          version: "0.11.8"
       - name: Verify lockfile is current
         run: uv lock --check
       - name: Sync dependencies (all extras, so the litellm tree is audited too)
@@ -75,22 +85,28 @@ jobs:
     # The declared dependency floors are a promise: resolve every direct dependency to its
     # lowest allowed version on the lowest supported Python and run the full suite against it,
     # so a floor the code no longer works with fails here instead of on a user's machine.
+    timeout-minutes: 15
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - name: Install uv
         uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+        with:
+          version: "0.11.8"
       - name: Sync dependencies at the lowest allowed versions
         run: uv sync --resolution lowest-direct --python 3.11
       - name: Tests against the declared floors
         run: uv run pytest -q
 
   build:
+    timeout-minutes: 15
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - name: Install uv
         uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+        with:
+          version: "0.11.8"
       - name: Verify lockfile is current
         run: uv lock --check
       - name: Build wheel and sdist
@@ -120,6 +136,7 @@ jobs:
   # What a brand-new user gets from `pip install` (fresh dependency resolution, not the dev
   # lockfile), plus the optional litellm extra that `uv sync` (no extras) never exercises.
   pip-install:
+    timeout-minutes: 10
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0

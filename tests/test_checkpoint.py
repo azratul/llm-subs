@@ -398,12 +398,13 @@ def test_parallel_translate_propagates_block_error(tmp_path):
         translate_with_checkpoint(_FailingProvider(), jobs, checkpoint=cp, parallel=2)
 
 
-def test_parallel_failure_surfaces_without_waiting_for_inflight_blocks(tmp_path):
+def test_parallel_failure_surfaces_without_waiting_for_inflight_blocks(tmp_path, capsys):
     """A failed block raises immediately; the pool must not drain in-flight blocks first.
 
     With the old `with ThreadPoolExecutor(...)` the implicit shutdown(wait=True) sat silent
     until every running block finished — up to the per-block timeout (600s) — before the user
-    saw the error or the Ctrl-C took effect.
+    saw the error or the Ctrl-C took effect. The interpreter still joins those threads at exit,
+    so a stderr note must explain why the process lingers after the error message.
     """
     import threading
     import time as time_mod
@@ -412,11 +413,16 @@ def test_parallel_failure_surfaces_without_waiting_for_inflight_blocks(tmp_path)
     from translate_subs.ai.provider import ProviderError
 
     release = threading.Event()
+    hanging_started = threading.Event()
 
     class _OneFailsOneHangs:
         def translate_block(self, job):
             if job.block_id == "0001":
+                # Fail only once the other block is truly in flight, so the stderr note about
+                # background threads is deterministic rather than a scheduling race.
+                hanging_started.wait(timeout=5)
                 raise ProviderError("backend down", retryable=False)
+            hanging_started.set()
             release.wait(timeout=5)  # simulates an in-flight HTTP call that can't be interrupted
             return {line.id: line.text for line in job.translate}, []
 
@@ -431,6 +437,7 @@ def test_parallel_failure_surfaces_without_waiting_for_inflight_blocks(tmp_path)
     finally:
         release.set()  # let the background thread finish so pytest teardown isn't delayed
     assert elapsed < 2.0, f"error was held back {elapsed:.1f}s by in-flight blocks"
+    assert "in-flight block call(s) still finishing" in capsys.readouterr().err
 
 
 def test_parallel_provider_falls_back_to_sequential_without_translate_block(tmp_path):

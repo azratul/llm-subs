@@ -107,7 +107,9 @@ The tool sends the **visible text** of your subtitles to the backend you pick wi
   pointed at a hosted model — transmit that text to a third party, subject to that provider's
   retention and pricing. Cost is typically per token, or covered by your CLI subscription.
 - **Local backends** — `ollama` (and `litellm` pointed at a local model) — keep everything on
-  your machine at no per-use cost.
+  your machine at no per-use cost. Note "local" follows the server, not the provider name:
+  `$OLLAMA_HOST` can point at a remote box, and then the text is sent there over HTTP
+  (`doctor --provider ollama` flags a non-loopback host).
 
 For sensitive material, or to avoid per-token billing, use a local backend. See
 [SECURITY.md](SECURITY.md) for the threat model, including prompt-injection notes when routing
@@ -119,7 +121,8 @@ untrusted subtitles through an agent CLI that has tool access.
 > the terminal, not the agent's tools, so its sole guard is that throwaway cwd. `doctor --provider
 > antigravity` and every command that runs the LLM (`translate`, `batch`, `analyze`, `review`,
 > `tighten`, `compact-memory --provider`) warn about this at runtime. When in doubt, translate with
-> `ollama` — the subtitle text never leaves your machine and no agent tools are in reach.
+> `ollama` on the default local host — the subtitle text never leaves your machine and no agent
+> tools are in reach.
 
 ## Quick start
 
@@ -259,7 +262,8 @@ llm-subs translate "Movie.en.srt" --provider ollama --model qwen3:4b \
 ```
 
 Point at a remote Ollama box with `OLLAMA_HOST=http://box:11434` (the server that produced an
-output is recorded in the manifest). A good split for a series: a strong CLI (`claude`) for the
+output is recorded in the manifest) — then the subtitle text is of course sent to that box, and
+`doctor --provider ollama` marks the non-local host so the "private" note above isn't overread. A good split for a series: a strong CLI (`claude`) for the
 cheap `analyze`/`review` passes and a local model for the high-volume `translate`.
 
 ### Anime episode, keep positioning (.ass)
@@ -402,7 +406,7 @@ written as UTF-8.
 | `resolve-conflicts <project>` | Walks flagged `conflicts.json` entries interactively (keep stored / use suggested / skip). |
 | `project-status <project>` | Shows a project's stored state for a target: glossary/character/conflict counts, and per-episode whether it was analyzed, whether a checkpoint file is present, and which output paths are tracked (no LLM call). |
 | `validate <subtitle>` | Structural validation (parseable, timings, no leftover markup). |
-| `doctor [--provider <name>] [--fix]` | Checks the environment: media tools (ffprobe/ffmpeg), writable data/cache dirs, owner-only state permissions, and — with `--provider` — that provider's backend (CLI on PATH, reachable Ollama server, or installed litellm). `--fix` repairs what it can: state/cache files left group/other-readable by an older release are tightened to owner-only. |
+| `doctor [--provider <name>] [--fix]` | Checks the environment: media tools (ffprobe/ffmpeg), writable data/cache dirs, owner-only state permissions, and — with `--provider` — that provider's backend: for a CLI, its path, its `--version`, and the model a run would actually use (the runner's built-in default when `--model` is omitted; codex/antigravity/opencode pick internally, which is said explicitly); for Ollama, a reachable server (plus a warning on a non-loopback host); for litellm, the installed package. `--fix` repairs what it can: state/cache files left group/other-readable by an older release are tightened to owner-only. |
 | `purge-cache` | Deletes the cache of subtitle tracks extracted from containers (`$XDG_CACHE_HOME/llm-subs/work`). Series memory and reports are not touched. |
 
 ### Providers (`--provider`)

@@ -37,8 +37,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# Only needed for `--provider litellm`; Ollama uses the stdlib HTTP client.
-litellm = ["litellm>=1.40"]
+# Only needed for `--provider litellm`; Ollama uses the stdlib HTTP client. Capped below the
+# next major like every other dependency: a breaking SDK major should be adopted deliberately.
+litellm = ["litellm>=1.40,<2"]
 
 [project.urls]
 Homepage = "https://github.com/azratul/llm-subs"

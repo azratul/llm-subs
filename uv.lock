@@ -1019,7 +1019,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "charset-normalizer", specifier = ">=3,<4" },
-    { name = "litellm", marker = "extra == 'litellm'", specifier = ">=1.40" },
+    { name = "litellm", marker = "extra == 'litellm'", specifier = ">=1.40,<2" },
     { name = "pydantic", marker = "python_full_version < '3.14'", specifier = ">=2.7,<3" },
     { name = "pydantic", marker = "python_full_version >= '3.14'", specifier = ">=2.12,<3" },
     { name = "pysubs2", specifier = ">=1.8,<2" },

@@ -10,9 +10,11 @@ inside the strict id->text contract the higher layers parse. LiteLLM routes to a
 
 from __future__ import annotations
 
+import ipaddress
 import json
 import os
 import urllib.error
+import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 from email.utils import parsedate_to_datetime
@@ -119,6 +121,22 @@ def _normalize_host(host: str) -> str:
             )
         return host
     return f"http://{host}"
+
+
+def host_is_loopback(base: str) -> bool:
+    """True when an http(s) base URL points at this machine (localhost / 127.x / ::1).
+
+    The privacy pitch of the `ollama` provider — subtitle text never leaves the machine — only
+    holds for a loopback host; `$OLLAMA_HOST` can just as well name a remote server. `doctor`
+    uses this to flag that case instead of letting the docs' "local" claim stand silently.
+    """
+    hostname = urllib.parse.urlparse(base).hostname or ""
+    if hostname == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(hostname).is_loopback
+    except ValueError:
+        return False
 
 
 @dataclass

@@ -19,12 +19,15 @@ permissions:
 # Third-party actions are pinned by commit SHA (version in the comment), matching ci.yml.
 jobs:
   build:
+    timeout-minutes: 20
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Install uv
         uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+        with:
+          version: "0.11.8"  # pin the uv binary too; the SHA above only pins the action
 
       - name: Verify lockfile is current
         run: uv lock --check
@@ -92,6 +95,7 @@ jobs:
 
   publish-pypi:
     needs: build
+    timeout-minutes: 10
     runs-on: ubuntu-latest
     # Trusted Publishing to PyPI via OIDC: no long-lived PYPI_TOKEN. The PyPI publisher is bound to
     # this workflow and the `pypi` environment, so the job must declare both.
@@ -101,6 +105,8 @@ jobs:
     steps:
       - name: Install uv
         uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+        with:
+          version: "0.11.8"  # pin the uv binary too; the SHA above only pins the action
 
       - name: Download built distributions
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
@@ -115,6 +121,7 @@ jobs:
     # The Release links users to the artifacts, so it is created only for a version that actually
     # made it to PyPI; if this job alone fails, re-run it without repeating the upload.
     needs: [build, publish-pypi]
+    timeout-minutes: 10
     runs-on: ubuntu-latest
     permissions:
       contents: write # create the GitHub Release and upload the artifacts
