@@ -13,7 +13,7 @@ from translate_subs.naming import base_stem, output_path
 from translate_subs.subs import document
 from translate_subs.subs.extractor import extract_units
 from translate_subs.subs.reinserter import apply_translations, flatten_overlaps, prune_to_units
-from translate_subs.subs.validator import validate_output, validate_translations
+from translate_subs.subs.validator import validate_file, validate_output, validate_translations
 
 
 def test_extractor_skips_non_translatable(sample_ass):
@@ -185,6 +185,29 @@ def test_flatten_overlaps_respects_final_style_state(tmp_path):
     assert "<i>" not in text  # toggled off → no italic
     assert "Normal text." in text
     assert "<u>Still underlined.</u>" in text  # left on → underline preserved
+
+
+def test_underlined_cue_passes_srt_output_validation(tmp_path):
+    # flatten_overlaps carries whole-line underline into .srt (see above), but validate_file —
+    # the structural gate the translate path runs on a rendered .srt — only admitted {\i}/{\b}
+    # blocks, so a translation with a valid <u> cue failed validation and nothing was written.
+    # Full identity pipeline, extract through the same validation gate.
+    subs = pysubs2.SSAFile()
+    subs.styles["Default"] = pysubs2.SSAStyle(alignment=2)
+    subs.events.append(pysubs2.SSAEvent(start=0, end=2000, text=r"{\u1}Underlined song line"))
+    subs.events.append(pysubs2.SSAEvent(start=2500, end=4000, text="Plain line."))
+
+    units = extract_units(subs)
+    jobs = build_jobs(units, target="es", rules=[], block_size=2, context=0)
+    apply_translations(subs, units, IdentityProvider().translate(jobs))
+    prune_to_units(subs, units)
+    flatten_overlaps(subs)
+    out = tmp_path / "out.srt"
+    document.save(subs, out, fmt="srt")
+
+    result = validate_file(out)
+    assert result.ok, result.errors
+    assert "<u>Underlined song line</u>" in out.read_text("utf-8")
 
 
 def test_extractor_captures_whole_line_leading_tags(sample_ass):

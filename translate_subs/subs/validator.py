@@ -9,10 +9,11 @@ from pathlib import Path
 from translate_subs.domain.models import TranslatableUnit
 from translate_subs.subs import document
 
-# pysubs2 represents the basic italic/bold that survive .srt as {\i1}/{\b0} override
-# blocks in event.text. Those are allowed; anything else in a block is leftover markup.
+# pysubs2 represents the basic italic/bold/underline that survive .srt as {\i1}/{\b0}/{\u1}
+# override blocks in event.text. Those are allowed (flatten_overlaps carries all three);
+# anything else in a block is leftover markup.
 _OVERRIDE_BLOCK_RE = re.compile(r"\{([^}]*)\}")
-_BASIC_TAGS_RE = re.compile(r"^(\\[ib][01])+$")
+_BASIC_TAGS_RE = re.compile(r"^(\\[ibu][01])+$")
 
 # Individual override commands inside a leading block, e.g. {\an8\pos(1,2)} -> \an8, \pos(1,2).
 # Checked by substring so the fidelity check tolerates pysubs2 re-bracketing/merging on round-trip.

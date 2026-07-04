@@ -16,6 +16,11 @@ All notable changes to this project are documented here. The format follows
   mixed. File input is folded upstream of this (pysubs2's `plaintext` already treats a stored
   `\n` as a break at parse time), so the guard matters for the reply direction — a model emitting
   a backslash in the translated text — and for text handed to the protocol directly.
+- **A whole-line underlined cue no longer makes `.srt` export fail.** `flatten_overlaps` carries
+  whole-line `<i>`/`<u>` emphasis into SRT, but the structural validator only admitted italic/bold
+  override blocks, so a source with a `{\u1}` cue (a song line, narration) failed output
+  validation and nothing was written. Underline is now allowed; regression covers the full
+  identity pipeline through the same validation gate.
 
 ## [0.7.0] - 2026-07-04
 
