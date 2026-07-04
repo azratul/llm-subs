@@ -65,8 +65,9 @@ _PROJECT_DEFAULTED = (
     "analyze_reasoning",
 )
 
+# Completion is left enabled (typer's default): --install-completion / --show-completion come
+# for free, and a CLI with this many subcommands and flags earns them.
 app = typer.Typer(
-    add_completion=False,
     help="Contextual subtitle translator (any language to any language); "
     "output is .ass by default, .srt with --format srt.",
 )

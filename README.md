@@ -61,6 +61,10 @@ llm-subs --help
 package manager. For `--provider litellm`, install the extra with
 `uv tool install "llm-subs[litellm]"` (or `uv tool install ".[litellm]"` from a clone).
 
+Tab completion for bash/zsh/fish comes built in — install it once with
+`llm-subs --install-completion` (restart the shell afterwards; `--show-completion` prints the
+script to inspect or place manually).
+
 Per-series memory and other state are stored under the standard user data directory
 (`$XDG_DATA_HOME/llm-subs`, i.e. `~/.local/share/llm-subs` on Linux), and extracted
 tracks under `$XDG_CACHE_HOME/llm-subs`. Override the whole data root with `$LLM_SUBS_HOME`
@@ -808,9 +812,6 @@ specific items follow.
   contains visible text. Such mixed events are uncommon, while extracting only the text portion
   would require a stateful ASS override parser. If one must be translated, split or clean that
   event in the source subtitle first. Pure drawing events remain preserved verbatim in ASS output.
-- **`opencode` receives the prompt as a process argument** (visible in process listings, bounded
-  by `ARG_MAX`). Translation blocks are small (a few KB), so this is accepted; the other CLI
-  backends use stdin.
 - **`flatten_overlaps` does not cap stacking.** It uses a sweep-line pass for the timeline, but a
   moment where many cues overlap will still produce a single cue with that many stacked lines.
   Only relevant to `--format srt`; the default `.ass` keeps cues positioned and is unaffected.

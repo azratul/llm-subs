@@ -13,6 +13,14 @@ All notable changes to this project are documented here. The format follows
   not-yet-started blocks and stops waiting; an in-flight HTTP call can't be interrupted
   mid-request, so it finishes in a background thread and still persists its block to the
   checkpoint for the next resume.
+- **`opencode` now receives the prompt on stdin, not argv.** Process arguments are visible to
+  every local user in the process list, and subtitle-derived prompts don't belong there; stdin
+  also sidesteps OS argv length limits. Verified live: `opencode run` reads the piped prompt and
+  its stdout is byte-identical between the two modes (the banner goes to stderr). This closes the
+  README's "prompt as a process argument" limitation.
+- **LiteLLM SDK errors are truncated like the CLI backends' stderr.** An SDK exception can embed
+  the whole HTTP response body; the `ProviderError` message now carries only its head (elision
+  marked), while retryability is still classified on the full text.
 - **Server-controlled and oversized inputs are bounded.** Three cheap defenses on the same theme:
   a `Retry-After` header is honoured only up to 5 minutes (a broken/hostile backend replying
   `Retry-After: 999999` no longer parks a run for days); backend stderr/stdout quoted inside an
@@ -43,6 +51,12 @@ All notable changes to this project are documented here. The format follows
   stale once (regenerate with `--force`).
 
 ### Added
+- **Shell completion is enabled** (typer's built-in): `llm-subs --install-completion` sets up
+  bash/zsh/fish tab completion; `--show-completion` prints the script to inspect or place
+  manually. Documented in the README's install section.
+- **`CONTRIBUTING.md` gains a "Good first issues" section** pointing at the well-bounded areas
+  (legacy codepage mappings, linguistic regression fragments, CLI-adapter quirks, `doctor`
+  checks) so a first contribution doesn't have to touch the deterministic core.
 - **`doctor --provider <cli>` reports the CLI's version and effective model**, not just its path.
   The version pins down "works here / fails there" reports; the model shown is what a run would
   actually use — the runner's built-in default when `--model` is omitted (e.g. `claude` →

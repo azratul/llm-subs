@@ -61,15 +61,17 @@ def test_antigravity_headless_via_stdin(capture_run):
     assert capture_run["input"] == "PROMPT"
 
 
-def test_opencode_passes_message_as_arg(capture_run):
+def test_opencode_reads_prompt_from_stdin(capture_run):
     assert OpencodeCli()("PROMPT") == "FROM_STDOUT"
     cmd = capture_run["cmd"]
     assert cmd[1] == "run"
     # Hardening: no external plugins, and never auto-approve permissions.
     assert "--pure" in cmd
     assert "--dangerously-skip-permissions" not in cmd
-    assert cmd[-1] == "PROMPT"
-    assert capture_run["input"] is None
+    # The prompt arrives on stdin, never as an argument: argv is visible to every local user in
+    # the process list, and subtitle-derived prompts don't belong there.
+    assert "PROMPT" not in cmd
+    assert capture_run["input"] == "PROMPT"
 
 
 def test_opencode_denies_all_tools_via_inline_config(capture_run):

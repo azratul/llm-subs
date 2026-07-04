@@ -139,6 +139,23 @@ def test_litellm_calls_completion(monkeypatch):
     assert calls["messages"][0]["content"] == "PROMPT"
 
 
+def test_litellm_truncates_giant_sdk_error(monkeypatch):
+    # SDK exceptions can embed the whole HTTP response body; the message carries the head of it,
+    # but retryability is still classified on the full text (the marker sits at the end).
+    fake = types.ModuleType("litellm")
+
+    def completion(model, messages, timeout=None, **kwargs):
+        raise RuntimeError("x" * 50_000 + " invalid api key")
+
+    fake.completion = completion
+    monkeypatch.setitem(sys.modules, "litellm", fake)
+    with pytest.raises(ProviderError) as exc_info:
+        LiteLLMRunner(model="gpt-4o-mini")("P")
+    assert len(str(exc_info.value)) < 3000
+    assert "characters truncated" in str(exc_info.value)
+    assert not exc_info.value.retryable
+
+
 def test_litellm_missing_dependency(monkeypatch):
     monkeypatch.setitem(sys.modules, "litellm", None)  # makes `import litellm` raise
     with pytest.raises(ProviderError, match="litellm is not installed"):

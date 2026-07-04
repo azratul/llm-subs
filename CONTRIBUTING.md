@@ -142,6 +142,29 @@ Real gaps we know about. Don't silently close them, and don't re-file them as ne
   separate job installs `.[litellm]` and imports the runner, so the install path is checked but the
   adapter's request/response handling is covered only by argv/mock tests, not a live model call.
 
+## Good first issues
+
+Well-bounded areas if you want to contribute without touching the deterministic core:
+
+- **A language's legacy codepage mapping** — `_LANG_LEGACY_ENCODINGS` in
+  `translate_subs/subs/document.py` maps `--lang` to the conventional legacy encoding. If your
+  language's subtitles commonly use one that isn't mapped, adding it is a two-line change plus a
+  test in `tests/test_encoding.py` (write bytes in that codepage, load, assert the text).
+- **A linguistic regression fragment** — `tests/test_linguistic_regression.py` runs realistic
+  fragments through the full prompt/reply/reinsert contract with no LLM. If your language has a
+  feature that could break serialization (script direction, combining characters, unusual
+  punctuation), add a `_FRAGMENTS` entry; the test harness does the rest.
+- **A provider quirk** — the CLI adapters (`translate_subs/ai/cli_adapters.py`) are thin argv
+  builders covered by `tests/test_cli_adapters.py`. If a backend CLI changes a flag, the fix and
+  its test are usually under ten lines each. See "How to add a translation provider" above for
+  a whole new backend.
+- **A `doctor` check** — `translate_subs/diagnostics.py` is a list of independent, no-LLM
+  `Check` functions. New environment pitfalls (a missing tool, a bad config value) slot in
+  without touching anything else. `doctor` must never throw.
+
+Please read "Deliberate design decisions" and "Known limitations" first so an intentional
+behaviour doesn't come back as a bug report.
+
 ## Support and compatibility
 
 Maintained on a best-effort basis. See the **Versioning and compatibility policy** in the

@@ -21,7 +21,12 @@ from email.utils import parsedate_to_datetime
 from time import time
 from typing import Any
 
-from translate_subs.ai.provider import ErrorCategory, ProviderError, backend_error_is_retryable
+from translate_subs.ai.provider import (
+    ErrorCategory,
+    ProviderError,
+    backend_error_is_retryable,
+    truncate_detail,
+)
 
 _DEFAULT_OLLAMA_HOST = "http://localhost:11434"
 _RETRYABLE_HTTP_STATUSES = {408, 409, 425, 429, 500, 502, 503, 504}
@@ -221,15 +226,17 @@ class LiteLLMRunner:
                 timeout=self.timeout,
             )
         except Exception as exc:  # noqa: BLE001 - litellm raises backend-specific errors
+            # SDK exceptions can embed the whole HTTP response body; truncate for the message
+            # but classify retryability on the full text (the marker may sit at the end).
             raise ProviderError(
-                f"litellm completion failed: {exc}",
+                f"litellm completion failed: {truncate_detail(str(exc))}",
                 retryable=backend_error_is_retryable(str(exc)),
             ) from exc
         try:
             content = resp.choices[0].message.content
         except (AttributeError, IndexError, TypeError) as exc:
             raise ProviderError(
-                f"Unexpected litellm response: {resp}",
+                f"Unexpected litellm response: {truncate_detail(str(resp))}",
                 retryable=True,
             ) from exc
         if not isinstance(content, str):

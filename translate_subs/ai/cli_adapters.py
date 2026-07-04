@@ -132,7 +132,12 @@ class AntigravityCli:
 
 @dataclass
 class OpencodeCli:
-    """opencode CLI: `opencode run <message>` runs headless and prints the reply."""
+    """opencode CLI: `opencode run` runs headless, reads the prompt from stdin, prints the reply.
+
+    The prompt goes through stdin, not argv (verified live: stdout is byte-identical either way,
+    the banner goes to stderr): argv is visible to every local user in the process list, and
+    subtitle-derived prompts don't belong there — it also sidesteps OS argv length limits.
+    """
 
     model: str | None = None
     binary: str = "opencode"
@@ -149,8 +154,7 @@ class OpencodeCli:
         cmd = [self.binary, "run", "--pure"]
         if self.model:
             cmd += ["-m", self.model]
-        cmd += [prompt]
-        return _run(self.binary, cmd, None, self.timeout, env=env)
+        return _run(self.binary, cmd, prompt, self.timeout, env=env)
 
 
 Runner = Callable[[str], str]
