@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-07-04
+
 ### Fixed
 - **A parallel-translation failure (or Ctrl-C) surfaces immediately.** The thread pool's implicit
   `shutdown(wait=True)` sat silent until every in-flight block finished — up to the per-block
@@ -49,6 +51,27 @@ All notable changes to this project are documented here. The format follows
   resolution change, a margin edit, or a drawing change left the output looking up to date. `.srt`
   is flat and prunes those, so its digest stays units-only. Existing `.ass` manifests are re-flagged
   stale once (regenerate with `--force`).
+- `review --apply`/`tighten --apply` no longer make a later `translate`/`batch` wrongly report the
+  output as **hand-edited** (`modified`). Those commands legitimately rewrite the translated file,
+  but did not update its content hash in the manifest, so the next run saw a mismatch and refused to
+  overwrite without `--force`. They now re-record the manifest's `output_hash` after writing, so only
+  edits made *outside* the tool are flagged.
+- `batch --json` now emits JSON on **every** path. A run that failed before starting (e.g. the input
+  argument is not a directory) printed a Rich-formatted error to stdout, corrupting the JSON a script
+  was parsing; the error is now a `{"error": ...}` object on stdout. The antigravity weak-isolation
+  warning is likewise routed to stderr under `--json` so it can't contaminate the JSON on stdout.
+- A **corrupt/unreadable output manifest** is no longer silently treated as "up to date" and
+  skipped. When the manifest file exists but can't be parsed, `translate`/`batch` can't verify the
+  output is current, so they surface it (reported `stale`, never overwritten without `--force`)
+  instead of hiding it. A genuinely *absent* manifest (legacy/pre-feature output) is still skipped
+  as before — only an existing-but-broken one is flagged.
+- Corrected stale `CONTRIBUTING.md` claims that contradicted the code: the *output-manifest*
+  fingerprint **does** cover timing/style (a re-timed source is flagged stale — only the
+  *episode-context* fingerprint is content-only), and `batch` no longer aborts on every
+  `ProviderError` (content faults are per-episode). Softened the "no extra isolation needed" note.
+- Resolved a `README.md` contradiction: the "non-goals" section claimed coverage is "measured and
+  reported, not gated" while CI enforces an 85% floor. The README now describes the actual policy —
+  a **low floor as a regression net**, but deliberately no strict 90–95% gate.
 
 ### Added
 - **Shell completion is enabled** (typer's built-in): `llm-subs --install-completion` sets up
@@ -180,29 +203,6 @@ All notable changes to this project are documented here. The format follows
   instead of overwriting the whole line. The size cap also bounds the space-less CJK case, where the
   whole line is a single token. Gender/empty-line/missing-id fixes still replace the line, as they
   legitimately may.
-
-### Fixed
-- Corrected stale `CONTRIBUTING.md` claims that contradicted the code: the *output-manifest*
-  fingerprint **does** cover timing/style (a re-timed source is flagged stale — only the
-  *episode-context* fingerprint is content-only), and `batch` no longer aborts on every
-  `ProviderError` (content faults are per-episode). Softened the "no extra isolation needed" note.
-- Resolved a `README.md` contradiction: the "non-goals" section claimed coverage is "measured and
-  reported, not gated" while CI enforces an 85% floor. The README now describes the actual policy —
-  a **low floor as a regression net**, but deliberately no strict 90–95% gate.
-- `review --apply`/`tighten --apply` no longer make a later `translate`/`batch` wrongly report the
-  output as **hand-edited** (`modified`). Those commands legitimately rewrite the translated file,
-  but did not update its content hash in the manifest, so the next run saw a mismatch and refused to
-  overwrite without `--force`. They now re-record the manifest's `output_hash` after writing, so only
-  edits made *outside* the tool are flagged.
-- `batch --json` now emits JSON on **every** path. A run that failed before starting (e.g. the input
-  argument is not a directory) printed a Rich-formatted error to stdout, corrupting the JSON a script
-  was parsing; the error is now a `{"error": ...}` object on stdout. The antigravity weak-isolation
-  warning is likewise routed to stderr under `--json` so it can't contaminate the JSON on stdout.
-- A **corrupt/unreadable output manifest** is no longer silently treated as "up to date" and
-  skipped. When the manifest file exists but can't be parsed, `translate`/`batch` can't verify the
-  output is current, so they surface it (reported `stale`, never overwritten without `--force`)
-  instead of hiding it. A genuinely *absent* manifest (legacy/pre-feature output) is still skipped
-  as before — only an existing-but-broken one is flagged.
 
 ### Security
 - Stronger, louder guidance to prefer a local `ollama` model for untrusted material: `doctor
@@ -824,7 +824,8 @@ First tagged release.
   (`extra="forbid"`) and validate on assignment; unexpected LLM gender values fold to `unknown`
   instead of entering memory.
 
-[Unreleased]: https://github.com/azratul/llm-subs/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/azratul/llm-subs/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/azratul/llm-subs/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/azratul/llm-subs/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/azratul/llm-subs/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/azratul/llm-subs/compare/v0.3.0...v0.4.0
