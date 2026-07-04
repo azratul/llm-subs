@@ -96,7 +96,10 @@ jobs:
       - name: Sync dependencies at the lowest allowed versions
         run: uv sync --resolution lowest-direct --python 3.11
       - name: Tests against the declared floors
-        run: uv run pytest -q
+        # --no-sync is what makes this job real: a plain `uv run` notices the resolution-mode
+        # mismatch against the lockfile ("lowest-direct vs. highest"), quietly re-syncs to the
+        # highest versions and tests the same environment as the main job — never the floors.
+        run: uv run --no-sync pytest -q
 
   build:
     timeout-minutes: 15

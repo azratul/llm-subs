@@ -21,6 +21,12 @@ All notable changes to this project are documented here. The format follows
   override blocks, so a source with a `{\u1}` cue (a song line, narration) failed output
   validation and nothing was written. Underline is now allowed; regression covers the full
   identity pipeline through the same validation gate.
+- **The `minimum-versions` CI job now actually tests the declared floors.** After
+  `uv sync --resolution lowest-direct`, the plain `uv run pytest` step noticed the resolution-mode
+  mismatch against the lockfile, quietly re-synced to the highest versions and ran the suite
+  against the same environment as the main job — the floors were never exercised. The test step
+  now runs with `--no-sync`; verified locally that the suite passes against the real floors
+  (pydantic 2.7.0, pysubs2 1.8.0, typer 0.15.4), so no floor needed bumping.
 
 ## [0.7.0] - 2026-07-04
 
