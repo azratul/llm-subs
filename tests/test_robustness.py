@@ -809,6 +809,25 @@ def test_retry_provider_call_honours_retry_after():
     assert waits == [7.0]
 
 
+def test_retry_provider_call_caps_retry_after():
+    # Retry-After is server-controlled input: an absurd value must not park the tool for days.
+    from translate_subs.ai.provider import RETRY_AFTER_CAP, ProviderError, retry_provider_call
+
+    waits: list[float] = []
+    attempts = {"n": 0}
+
+    def rate_limited() -> str:
+        attempts["n"] += 1
+        if attempts["n"] == 1:
+            raise ProviderError("rate limited", retryable=True, retry_after=999_999.0)
+        return "ok"
+
+    assert (
+        retry_provider_call(rate_limited, max_retries=1, label="block", sleep=waits.append) == "ok"
+    )
+    assert waits == [RETRY_AFTER_CAP]
+
+
 def test_doctor_reports_writable_dirs(monkeypatch, tmp_path):
     from translate_subs import config, diagnostics
 

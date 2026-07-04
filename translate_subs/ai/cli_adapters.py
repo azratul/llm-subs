@@ -20,7 +20,7 @@ from pathlib import Path
 
 from translate_subs.ai.api_adapters import LiteLLMRunner, OllamaRunner
 from translate_subs.ai.claude_cli import ClaudeCli
-from translate_subs.ai.provider import ProviderError, backend_error_is_retryable
+from translate_subs.ai.provider import ProviderError, backend_error_is_retryable, truncate_detail
 
 
 def _run(
@@ -58,13 +58,13 @@ def _run(
     if proc.returncode != 0:
         detail = proc.stderr.strip() or proc.stdout.strip() or "no output"
         raise ProviderError(
-            f"`{binary_name}` failed (exit {proc.returncode}): {detail}",
+            f"`{binary_name}` failed (exit {proc.returncode}): {truncate_detail(detail)}",
             retryable=backend_error_is_retryable(detail),
         )
     if not proc.stdout.strip():
         detail = proc.stderr.strip() or "no output on stdout"
         raise ProviderError(
-            f"`{binary_name}` produced no output: {detail}",
+            f"`{binary_name}` produced no output: {truncate_detail(detail)}",
             retryable=True,
         )
     return proc.stdout

@@ -40,6 +40,19 @@ def test_run_raises_on_nonzero_exit_with_detail(monkeypatch):
         cli_adapters._run("codex", ["codex"], "prompt", 10)
 
 
+def test_run_truncates_giant_stderr_in_error_message(monkeypatch):
+    # A crashing CLI can dump megabytes of stderr; the exception carries the head of it, not all
+    # of it — but retryability is still classified on the full text (the marker sits at the end).
+    big = "x" * 50_000 + " invalid api key"
+    monkeypatch.setattr(cli_adapters.shutil, "which", lambda name: "/usr/bin/codex")
+    monkeypatch.setattr(cli_adapters.subprocess, "run", lambda *a, **k: _completed(2, stderr=big))
+    with pytest.raises(ProviderError) as exc_info:
+        cli_adapters._run("codex", ["codex"], "prompt", 10)
+    assert len(str(exc_info.value)) < 3000
+    assert "characters truncated" in str(exc_info.value)
+    assert not exc_info.value.retryable
+
+
 def test_run_raises_on_timeout(monkeypatch):
     monkeypatch.setattr(cli_adapters.shutil, "which", lambda name: "/usr/bin/agy")
 

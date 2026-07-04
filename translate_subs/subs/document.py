@@ -8,6 +8,12 @@ from pathlib import Path
 import pysubs2
 from charset_normalizer import from_bytes
 
+# Upper bound on an input subtitle file. The whole file is read into memory (encoding detection
+# needs the bytes, pysubs2 parses in memory) and charset-normalizer's cost grows with input size;
+# a mis-pointed video/archive would grind or exhaust memory with no useful message. Real subtitle
+# files top out in the tens of MiB even with embedded fonts, so 64 MiB is comfortably generous.
+_MAX_INPUT_BYTES = 64 * 1024 * 1024
+
 # BOM signatures, longest first: the UTF-32 marks start with the UTF-16 marks, so the 4-byte
 # checks must precede the 2-byte ones. Each maps to the codec that *strips* the BOM — utf-8-sig,
 # and the length-generic utf-16/utf-32 which also auto-detect endianness — so the marker never
@@ -121,6 +127,13 @@ def load(
     correctly. An explicit `encoding` is validated up front so an unknown codec surfaces as a
     short, actionable `ValueError` instead of a `LookupError` traceback from deep inside pysubs2.
     """
+    size = Path(path).stat().st_size
+    if size > _MAX_INPUT_BYTES:
+        raise ValueError(
+            f"'{path}' is {size / (1024 * 1024):.0f} MiB — too large for a subtitle file "
+            f"(limit {_MAX_INPUT_BYTES // (1024 * 1024)} MiB). Check that the path really "
+            f"points at a subtitle and not a video/archive with a subtitle extension."
+        )
     if encoding is None:
         encoding = detect_encoding(Path(path).read_bytes(), lang_hint=lang_hint)
     else:

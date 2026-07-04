@@ -113,6 +113,18 @@ def test_unknown_encoding_raises_clean_value_error(tmp_path):
         document.load(path, encoding="definitely-not-a-codec")
 
 
+def test_load_rejects_absurdly_large_input(tmp_path):
+    # A mis-pointed video/archive with a subtitle extension must fail fast with a clear message,
+    # not grind through charset detection on gigabytes. Sparse file: big st_size, no disk cost.
+    import os
+
+    path = tmp_path / "huge.ass"
+    path.touch()
+    os.truncate(path, 64 * 1024 * 1024 + 1)
+    with pytest.raises(ValueError, match="too large for a subtitle file"):
+        document.load(path)
+
+
 def test_validate_file_reads_cp1252(tmp_path):
     path = _write(tmp_path, "s.srt", _ES_LINES, "cp1252")
     result = validate_file(path)

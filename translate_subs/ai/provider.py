@@ -44,6 +44,19 @@ def backend_error_is_retryable(message: str) -> bool:
     return not any(marker in normalized for marker in _PERMANENT_BACKEND_MARKERS)
 
 
+# Cap on backend output quoted inside an error message. A crashing CLI can dump megabytes of
+# stderr; the exception (and every report/JSON that carries it) needs the head of it, not all of
+# it. Classification (`backend_error_is_retryable`) still sees the full text.
+_DETAIL_LIMIT = 2000
+
+
+def truncate_detail(text: str, limit: int = _DETAIL_LIMIT) -> str:
+    """Shorten backend output for inclusion in an error message, marking the elision."""
+    if len(text) <= limit:
+        return text
+    return f"{text[:limit]}... [{len(text) - limit} more characters truncated]"
+
+
 # Failure cause, so `batch` can isolate a per-episode content/protocol fault from a systemic one.
 # "content" is the only per-episode cause (see `is_per_episode_failure`); everything else —
 # including the default "unknown" — is systemic and aborts the run, so an unclassified failure is
@@ -98,6 +111,11 @@ class IncompleteTranslation(ProviderError):
 
 _T = TypeVar("_T")
 
+# Upper bound on an honoured Retry-After. The header is server-controlled input: a broken or
+# hostile backend replying `Retry-After: 999999` must not park the tool for days. Five minutes
+# comfortably covers real rate-limit windows; anything longer is treated as this cap.
+RETRY_AFTER_CAP = 300.0
+
 
 def retry_provider_call(
     fn: Callable[[], _T],
@@ -132,7 +150,7 @@ def retry_provider_call(
                 ) from exc
             if i < attempts - 1:
                 if exc.retry_after is not None:
-                    delay = max(0.0, exc.retry_after)
+                    delay = min(RETRY_AFTER_CAP, max(0.0, exc.retry_after))
                 else:
                     base_delay = min(backoff_cap, max(0.0, backoff_base) * (2**i))
                     jitter = base_delay * max(0.0, jitter_ratio) * random_fn()

@@ -16,7 +16,7 @@ import subprocess
 import tempfile
 from dataclasses import dataclass
 
-from translate_subs.ai.provider import ProviderError, backend_error_is_retryable
+from translate_subs.ai.provider import ProviderError, backend_error_is_retryable, truncate_detail
 
 DEFAULT_MODEL = "claude-opus-4-8"
 
@@ -111,7 +111,7 @@ class ClaudeCli:
         if proc.returncode != 0:
             detail = proc.stderr.strip() or proc.stdout.strip() or "no output"
             raise ProviderError(
-                f"`{self.binary}` failed (exit {proc.returncode}): {detail}",
+                f"`{self.binary}` failed (exit {proc.returncode}): {truncate_detail(detail)}",
                 retryable=backend_error_is_retryable(detail),
             )
 

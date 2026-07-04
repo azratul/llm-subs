@@ -13,6 +13,15 @@ All notable changes to this project are documented here. The format follows
   not-yet-started blocks and stops waiting; an in-flight HTTP call can't be interrupted
   mid-request, so it finishes in a background thread and still persists its block to the
   checkpoint for the next resume.
+- **Server-controlled and oversized inputs are bounded.** Three cheap defenses on the same theme:
+  a `Retry-After` header is honoured only up to 5 minutes (a broken/hostile backend replying
+  `Retry-After: 999999` no longer parks a run for days); backend stderr/stdout quoted inside an
+  error message is truncated to its head with an elision marker (a crashing CLI can dump megabytes,
+  which would otherwise ride along into every report and `--json` output — retryability is still
+  classified on the full text); and a subtitle input larger than 64 MiB is rejected up front with
+  a clear message (the whole file is read into memory for encoding detection and parsing, so a
+  mis-pointed video/archive with a subtitle extension would grind or exhaust memory instead of
+  failing usefully).
 - **Backend HTTP responses are size-capped (32 MiB).** The Ollama client buffered the whole
   response body unbounded, so a broken or misbehaving server that streams forever could consume
   arbitrary memory. Oversized replies now fail fast as a content fault (not retryable — the same
@@ -90,6 +99,15 @@ All notable changes to this project are documented here. The format follows
   fingerprint alone.
 
 ### Changed
+- **The sdist now ships the test suite**, so distro packagers and `pip download` users can run
+  `pytest` against their own environment instead of trusting our CI's. The suite is hermetic
+  without the repo's media fixtures (ffmpeg-dependent tests build their own or skip); `media/`
+  and the data sandbox remain excluded.
+- **The release workflow is split into `build` → `publish-pypi` → `github-release` jobs.** Each
+  job carries only its own privilege — the OIDC `id-token` for PyPI never coexists with
+  `contents: write` for the Release — and a failure after the PyPI upload (the one unrepeatable
+  step: a version can only be uploaded once) is re-run per job instead of re-attempting the
+  publish. The GitHub Release is created only for a version that actually reached PyPI.
 - **Complexity gate.** The ten most complex functions (`batch`, `translate_subtitle`,
   `translation_rules`, `review_translation`, `translate_with_checkpoint`, `translate`,
   `tighten_subtitle`, `pair_lines`, `select_track`, `merge_episode_context`) were split into

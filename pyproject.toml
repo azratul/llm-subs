@@ -60,9 +60,11 @@ build-backend = "hatchling.build"
 packages = ["translate_subs"]
 
 [tool.hatch.build.targets.sdist]
-# Ship source and project docs; never the multi-TB media fixtures or the data sandbox.
+# Ship source, the test suite (so distro packagers can run it against their environment) and
+# project docs; never the multi-TB media fixtures or the data sandbox.
 include = [
     "translate_subs",
+    "tests",
     "README.md",
     "LICENSE",
     "pyproject.toml",
