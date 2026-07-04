@@ -118,6 +118,35 @@ def test_multiline_cue_stays_single_prompt_line_and_round_trips():
     assert parsed == {"0001": "Primera línea\nSegunda línea"}
 
 
+def test_literal_backslash_n_is_not_a_line_break():
+    # `C:\new` carries the byte pair `\n` as visible text. Unescaped it is indistinguishable from
+    # the encoded line-break token, so the round trip used to split it into two lines. (File input
+    # is folded earlier — pysubs2's plaintext already treats a stored `\n` as a break — so this
+    # guards the protocol itself: the reply direction and any text handed to it unfolded.)
+    unit = TranslatableUnit(
+        id="0001", event_index=0, start=0, end=1000, style="Default", text=r"Open C:\new folder"
+    )
+    jobs = build_jobs([unit], target="es", rules=[], block_size=1, context=0)
+    prompt = build_translation_prompt(jobs[0])
+
+    section = prompt.split("TRANSLATE:")[1].split("\n\n")[0]
+    body = [ln for ln in section.splitlines() if ln.strip()]
+    # The literal backslash is doubled in the prompt, so the token space stays unambiguous.
+    assert body == [r"[0001] ?: Open C:\\new folder"]
+
+    # An obedient model echoes the doubled backslash; decoding restores the literal `\n`.
+    parsed = parse_translation_reply(json.dumps({"0001": r"Abre la carpeta C:\\new"}), jobs[0])
+    assert parsed == {"0001": r"Abre la carpeta C:\new"}
+
+    # An escaped backslash and a break token coexist: `\\` must be consumed before the `n`.
+    parsed = parse_translation_reply(json.dumps({"0001": r"C:\\new\nsegunda"}), jobs[0])
+    assert parsed == {"0001": "C:\\new\nsegunda"}
+
+    # A model that emitted a JSON newline escape already sends a real newline; it stays one.
+    parsed = parse_translation_reply(json.dumps({"0001": "línea uno\nlínea dos"}), jobs[0])
+    assert parsed == {"0001": "línea uno\nlínea dos"}
+
+
 def test_claude_provider_round_trip_with_fake_runner(sample_ass):
     units = extract_units(sample_ass)
     jobs = build_jobs(units, target="es", rules=[], block_size=2, context=0)

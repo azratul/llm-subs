@@ -6,6 +6,17 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+- **A literal `\n` in a cue's text no longer comes back as a line break.** The job protocol showed
+  a real break as the token `\n` without escaping backslashes already in the text, so a path like
+  `C:\new` was indistinguishable from the token and the round trip split it into two physical
+  lines. Backslashes are now doubled in the prompt and both tokens are decoded in a single
+  left-to-right pass on reply; `TRANSLATION_PROMPT_VERSION` bumped to 2, so checkpoints and
+  outputs produced with the old encoding are re-translated/flagged stale instead of silently
+  mixed. File input is folded upstream of this (pysubs2's `plaintext` already treats a stored
+  `\n` as a break at parse time), so the guard matters for the reply direction — a model emitting
+  a backslash in the translated text — and for text handed to the protocol directly.
+
 ## [0.7.0] - 2026-07-04
 
 ### Fixed

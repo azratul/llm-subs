@@ -44,9 +44,10 @@ def _ass(*event_lines: str) -> pysubs2.SSAFile:
 
 
 def _echo_reply(job) -> str:
-    """What a perfectly obedient model returns: every id echoed, breaks as the literal \\n."""
+    """What a perfectly obedient model returns: every id echoed exactly as the prompt shows it —
+    backslashes doubled, breaks as the literal \\n."""
     return json.dumps(
-        {line.id: line.text.replace("\n", "\\n") for line in job.translate},
+        {line.id: line.text.replace("\\", "\\\\").replace("\n", "\\n") for line in job.translate},
         ensure_ascii=False,
     )
 

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import random
+import re
 import time
 from abc import ABC, abstractmethod
 from collections.abc import Callable
@@ -21,7 +22,7 @@ from typing import Literal, TypeVar
 from translate_subs.ai.job_protocol import JobLine, TranslationJobIn, TranslationJobOut
 from translate_subs.fsutil import atomic_write_text, ensure_private_dir
 
-TRANSLATION_PROMPT_VERSION = 1
+TRANSLATION_PROMPT_VERSION = 2
 _PERMANENT_BACKEND_MARKERS = (
     "auth error",
     "authentication",
@@ -228,6 +229,23 @@ class FileHandoffProvider(TranslationProvider):
         return result
 
 
+# One-line serialization of a cue's text: `\\` is a literal backslash, `\n` a line break.
+_LINE_TOKEN_RE = re.compile(r"\\(n|\\)")
+
+
+def _encode_line_text(text: str) -> str:
+    # The backslash must be escaped first: without it a literal `\n` already in the text (e.g.
+    # the path `C:\new`) is indistinguishable from an encoded break and comes back as a real
+    # newline after the round trip.
+    return text.replace("\\", "\\\\").replace("\n", "\\n")
+
+
+def _decode_line_text(text: str) -> str:
+    # Single left-to-right pass, so the `\\` in an echoed `\\n` is consumed as one backslash
+    # before the `n` — chained str.replace would corrupt exactly that case.
+    return _LINE_TOKEN_RE.sub(lambda m: "\n" if m.group(1) == "n" else "\\", text)
+
+
 def _format_lines(lines: list[JobLine]) -> str:
     # Each unit must stay on a single physical line so the `[ID] Speaker: text` framing is
     # unambiguous. A cue with an internal break carries a real newline in `text`; left raw it
@@ -235,8 +253,7 @@ def _format_lines(lines: list[JobLine]) -> str:
     # the break as the literal two-character token `\n` (the prompt tells the model to keep it).
     rendered = []
     for line in lines:
-        text = line.text.replace("\n", "\\n")
-        rendered.append(f"[{line.id}] {line.speaker or '?'}: {text}")
+        rendered.append(f"[{line.id}] {line.speaker or '?'}: {_encode_line_text(line.text)}")
     return "\n".join(rendered)
 
 
@@ -245,8 +262,9 @@ def build_translation_prompt(job: TranslationJobIn) -> str:
         f"Translate the subtitle lines below into {job.target}.",
         "Each line is `[ID] Speaker: visible text`. Translate ONLY the lines under "
         "TRANSLATE; the CONTEXT lines are for reference and must not be returned.",
-        "A line break inside a cue is shown as the literal token \\n; keep it as \\n in your "
-        "output. Preserve meaning and tone. Do not add or drop lines.",
+        "A line break inside a cue is shown as the literal token \\n and a literal backslash "
+        "is doubled as \\\\; keep both exactly like that in your output. Preserve meaning and "
+        "tone. Do not add or drop lines.",
     ]
     if job.rules:
         parts.append("Rules:\n" + "\n".join(f"- {r}" for r in job.rules))
@@ -300,10 +318,11 @@ def parse_translation_reply(raw: str, job: TranslationJobIn) -> dict[str, str]:
             retryable=True,
             category="content",
         )
-    # The source is shown with line breaks as the literal token `\n`, so the model echoes it back
-    # the same way; turn it into a real newline (a model that instead emitted a JSON newline escape
-    # already has one, and this leaves that untouched) so reinsertion produces an actual break.
-    translations = {str(k): v.replace("\\n", "\n") for k, v in data.items()}
+    # The source is shown with line breaks as `\n` and literal backslashes as `\\`, so the model
+    # echoes them back the same way; decode both (a model that instead emitted a JSON newline
+    # escape already has a real newline, and the decode leaves that untouched) so reinsertion
+    # produces an actual break and a path like `C:\new` survives the round trip.
+    translations = {str(k): _decode_line_text(v) for k, v in data.items()}
     empty = sorted(key for key, value in translations.items() if not value.strip())
     if empty:
         raise IncompleteTranslation(job.block_id, translations, empty)
