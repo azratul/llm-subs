@@ -88,8 +88,9 @@ max-complexity = 12
 # raises typer.Exit after printing a friendly message (no exception chaining wanted).
 "translate_subs/cli.py" = ["B008", "B904"]
 "translate_subs/commands/*.py" = ["B008", "B904"]
-# The fixture embeds a real .ass file whose Style/Format header lines are inherently long.
+# These fixtures embed real .ass content whose Style/Format header lines are inherently long.
 "tests/test_complex_ass.py" = ["E501"]
+"tests/test_linguistic_regression.py" = ["E501"]
 
 [tool.mypy]
 python_version = "3.11"
