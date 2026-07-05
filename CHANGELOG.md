@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-07-05
+
 ### Fixed
 - **A literal `\n` in a cue's text no longer comes back as a line break.** The job protocol showed
   a real break as the token `\n` without escaping backslashes already in the text, so a path like
@@ -866,7 +868,8 @@ First tagged release.
   (`extra="forbid"`) and validate on assignment; unexpected LLM gender values fold to `unknown`
   instead of entering memory.
 
-[Unreleased]: https://github.com/azratul/llm-subs/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/azratul/llm-subs/compare/v0.7.1...HEAD
+[0.7.1]: https://github.com/azratul/llm-subs/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/azratul/llm-subs/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/azratul/llm-subs/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/azratul/llm-subs/compare/v0.4.0...v0.5.0
