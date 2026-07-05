@@ -72,8 +72,8 @@ A provider is a callable `runner(prompt: str) -> str` behind the same abstractio
    help strings.
 4. **Wire diagnostics** in `translate_subs/diagnostics.py` so `doctor --provider <name>` verifies
    the backend (binary on PATH / reachable server / installed package).
-5. **Test** argv/behaviour with a fake `subprocess.run` (see `tests/test_phase6.py`) — no live
-   calls; live-verify by hand and note it in the PR.
+5. **Test** argv/behaviour with a fake `subprocess.run` (see `tests/test_cli_adapters.py`) — no
+   live calls; live-verify by hand and note it in the PR.
 
 ## Troubleshooting by provider
 

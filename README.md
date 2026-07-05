@@ -514,11 +514,12 @@ llm-subs batch "TV Shows/Show/Season 1" --project "Show" --target es-latam \
   --provider claude --pre-analyze
 ```
 
-Without `--pre-analyze`, each episode is translated with only the memory accumulated from the
-episodes that came before it in the batch — episode 20 benefits from episodes 1–19, but episode
-1 has nothing. With `--pre-analyze`, all episodes contribute to the shared memory first, so
-every episode (including the first) benefits from the full series context. The command runs in
-two clearly labeled phases:
+Without `--pre-analyze`, translation uses whatever series memory already exists (from earlier
+`analyze` runs or a previous `--pre-analyze`) — the translate pass itself never updates memory,
+so a plain `batch` over an unanalyzed series translates every episode without any series context.
+With `--pre-analyze`, all episodes are analyzed first — that is what builds the memory — so every
+translation benefits from the full series context. The command runs in two clearly labeled
+phases:
 
 ```
 Phase 1/2: Analyzing episodes…

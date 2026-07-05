@@ -42,6 +42,11 @@ All notable changes to this project are documented here. The format follows
   `file-handoff` are valid translate providers but have no generative output, so accepting them
   as the analysis provider only deferred the failure to the first `analyze`/`--pre-analyze` run;
   the setting is now validated at set time (and on loading a hand-edited `settings.json`).
+- **README no longer claims `batch` accumulates memory between episodes.** The translate pass
+  never updates series memory (only `analyze` merges into it), so without `--pre-analyze` every
+  episode in a batch sees exactly the same pre-existing memory; the batch section now says so.
+  Also fixed a stale `CONTRIBUTING.md` pointer to the renamed `tests/test_phase6.py` (now
+  `tests/test_cli_adapters.py`).
 
 ## [0.7.0] - 2026-07-04
 
