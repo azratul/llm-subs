@@ -109,6 +109,26 @@ def test_doctor_flags_group_readable_state(tmp_path, monkeypatch):
     assert "doctor --fix" in flagged.detail
 
 
+def test_doctor_permission_audit_skipped_on_windows(tmp_path, monkeypatch):
+    # POSIX mode bits are synthetic on Windows (a writable file reports 0o666), so the audit
+    # would flag every entry and offer a chmod that cannot fix anything; it must opt out.
+    from translate_subs import diagnostics
+
+    projects = tmp_path / "projects"
+    work = tmp_path / "cache"
+    projects.mkdir()
+    work.mkdir()
+    (projects / "memory.json").write_text("subtitle text", encoding="utf-8")
+    monkeypatch.setattr(diagnostics.config, "PROJECTS_DIR", projects)
+    monkeypatch.setattr(diagnostics.config, "WORK_DIR", work)
+    monkeypatch.setattr(diagnostics.os, "name", "nt")
+
+    check = diagnostics._permissions_check()
+    assert check.status == "ok"
+    assert "Windows" in check.detail
+    assert diagnostics.fix_permissions() == (0, [])
+
+
 @pytest.mark.skipif(os.name != "posix", reason="POSIX file permissions only")
 def test_doctor_fix_permissions_tightens_state_to_owner_only(tmp_path, monkeypatch):
     import stat
@@ -996,6 +1016,29 @@ def test_doctor_ollama_flags_remote_host(monkeypatch):
 
     monkeypatch.setenv("OLLAMA_HOST", "http://127.0.0.1:11434")
     assert diagnostics._ollama_check("qwen3:4b").status == "ok"
+
+
+def test_doctor_ollama_caps_tags_response(monkeypatch):
+    # A broken (or non-Ollama) server streaming an endless /api/tags body must not be buffered
+    # whole into memory — doctor reads a bounded amount and reports the answer as implausible.
+    from translate_subs import diagnostics
+
+    class EndlessBody:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def read(self, limit):
+            return b"x" * limit  # always fills the cap: the body is larger than allowed
+
+    monkeypatch.setattr(diagnostics.urllib.request, "urlopen", lambda url, timeout=5: EndlessBody())
+    monkeypatch.delenv("OLLAMA_HOST", raising=False)
+
+    check = diagnostics._ollama_check()
+    assert check.status == "warn"
+    assert "not a plausible model list" in check.detail
 
 
 def test_host_is_loopback():

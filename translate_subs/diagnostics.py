@@ -104,6 +104,8 @@ def fix_permissions() -> tuple[int, list[str]]:
     number of entries fixed and any per-entry errors (the fix keeps going past an unfixable
     entry).
     """
+    if os.name == "nt":
+        return 0, []
     fixed = 0
     errors: list[str] = []
     for path in _loose_entries(config.PROJECTS_DIR) + _loose_entries(config.WORK_DIR):
@@ -117,6 +119,15 @@ def fix_permissions() -> tuple[int, list[str]]:
 
 
 def _permissions_check() -> Check:
+    # POSIX permission bits are synthetic on Windows (a writable file reports 0o666 and chmod
+    # only toggles read-only), so the audit would flag every entry with advice that can't work
+    # there; access control on NTFS is ACLs, out of this check's scope.
+    if os.name == "nt":
+        return Check(
+            "state permissions",
+            "ok",
+            "POSIX permission audit skipped on Windows (mode bits are synthetic there)",
+        )
     # Audit only the private subtrees: series memory/state (PROJECTS_DIR) and the extracted-track
     # cache (WORK_DIR), both of which can hold subtitle text. The sandbox output dir is deliberately
     # world-readable (a media server reads the final subtitle), so it is not audited here.
@@ -160,11 +171,24 @@ def _ollama_check(model: str | None = None) -> Check:
     return check
 
 
+# /api/tags is a small model list; anything bigger is a broken (or non-Ollama) server, and
+# doctor must not buffer an unbounded body — the same discipline as the chat client's 32 MiB cap.
+_MAX_TAGS_BYTES = 4 * 1024 * 1024
+
+
 def _ollama_server_check(base: str, model: str | None) -> Check:
     url = f"{base.rstrip('/')}/api/tags"
     try:
         with urllib.request.urlopen(url, timeout=5) as resp:  # noqa: S310 - local server URL
-            payload = json.loads(resp.read().decode("utf-8"))
+            body = resp.read(_MAX_TAGS_BYTES + 1)
+        if len(body) > _MAX_TAGS_BYTES:
+            return Check(
+                "ollama",
+                "warn",
+                f"server at {base} but /api/tags returned over "
+                f"{_MAX_TAGS_BYTES // (1024 * 1024)} MiB — not a plausible model list.",
+            )
+        payload = json.loads(body.decode("utf-8"))
     except urllib.error.URLError as exc:
         return Check(
             "ollama",

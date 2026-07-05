@@ -31,6 +31,13 @@ All notable changes to this project are documented here. The format follows
   returning an unknown `scope` or a non-string `suggested` raised a raw pydantic
   `ValidationError` out of `parse_findings`, skipping the retry that an unparseable-JSON reply
   in the same position would get; it now surfaces as a retryable content `ProviderError`.
+- **`doctor` bounds the Ollama `/api/tags` response (4 MiB)** instead of buffering an unbounded
+  body — the same discipline the chat client applies (32 MiB); an oversized answer is reported
+  as "not a plausible model list", not held in memory.
+- **`doctor` no longer runs the POSIX permission audit on Windows.** Mode bits are synthetic
+  there (a writable file reports 0o666), so the audit flagged every state entry and offered a
+  `chmod` that cannot fix anything; the check now reports itself skipped and `--fix` is a no-op
+  on Windows.
 
 ## [0.7.0] - 2026-07-04
 
