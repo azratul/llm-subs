@@ -50,12 +50,24 @@ class ProjectSettings(BaseModel):
             return validate_target(value)
         return value
 
-    @field_validator("provider", "analyze_provider")
+    @field_validator("provider")
     @classmethod
     def _check_provider(cls, value: str | None) -> str | None:
         if value is not None and value not in VALID_PROVIDERS:
             raise ValueError(
                 f"unknown provider '{value}' (choose from {', '.join(VALID_PROVIDERS)})"
+            )
+        return value
+
+    @field_validator("analyze_provider")
+    @classmethod
+    def _check_analyze_provider(cls, value: str | None) -> str | None:
+        # Analysis needs a generative backend; `identity`/`file-handoff` are translate-only
+        # (passthrough / job files). `make_ai_runner` would reject them anyway, but only when an
+        # analysis actually runs — reject them here so `config` fails at set time instead.
+        if value is not None and value not in CLI_PROVIDERS:
+            raise ValueError(
+                f"provider '{value}' cannot analyze (choose from {', '.join(CLI_PROVIDERS)})"
             )
         return value
 

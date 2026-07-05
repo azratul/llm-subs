@@ -1141,6 +1141,28 @@ def test_settings_reject_path_like_target(tmp_path):
     assert ProjectSettings(target="es-latam").target == "es-latam"  # valid tag still accepted
 
 
+def test_settings_reject_non_generative_analyze_provider(tmp_path, monkeypatch):
+    # `identity`/`file-handoff` are valid *translate* providers but cannot analyze; accepting
+    # them in settings only defers the failure to the first analysis run. Reject at set time.
+    import pydantic
+
+    from translate_subs.settings import ProjectSettings
+
+    with pytest.raises(pydantic.ValidationError, match="cannot analyze"):
+        ProjectSettings(analyze_provider="identity")
+    with pytest.raises(pydantic.ValidationError, match="cannot analyze"):
+        ProjectSettings(analyze_provider="file-handoff")
+    assert ProjectSettings(analyze_provider="ollama").analyze_provider == "ollama"
+    # The translate provider legitimately still accepts the passthrough backends.
+    assert ProjectSettings(provider="identity").provider == "identity"
+
+    monkeypatch.setattr(config, "PROJECTS_DIR", tmp_path / "projects")
+    bad = CliRunner().invoke(app, ["config", "P", "--analyze-provider", "identity"])
+    assert bad.exit_code != 0
+    output = bad.output + str(bad.exception or "")
+    assert "cannot analyze" in output
+
+
 def test_config_command_sets_unsets_and_validates(tmp_path, monkeypatch):
     from translate_subs.settings import load_settings
 

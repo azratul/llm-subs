@@ -38,6 +38,10 @@ All notable changes to this project are documented here. The format follows
   there (a writable file reports 0o666), so the audit flagged every state entry and offered a
   `chmod` that cannot fix anything; the check now reports itself skipped and `--fix` is a no-op
   on Windows.
+- **`config --analyze-provider` rejects backends that cannot analyze.** `identity` and
+  `file-handoff` are valid translate providers but have no generative output, so accepting them
+  as the analysis provider only deferred the failure to the first `analyze`/`--pre-analyze` run;
+  the setting is now validated at set time (and on loading a hand-edited `settings.json`).
 
 ## [0.7.0] - 2026-07-04
 
