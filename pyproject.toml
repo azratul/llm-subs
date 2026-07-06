@@ -1,6 +1,6 @@
 [project]
 name = "llm-subs"
-version = "0.7.1"
+version = "0.7.2"
 description = "Contextual subtitle translator (any language to any language) that preserves timing and ASS structure, driven by LLM agent CLIs."
 readme = "README.md"
 requires-python = ">=3.11"

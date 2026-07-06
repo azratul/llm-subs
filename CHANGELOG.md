@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.7.2] - 2026-07-06
+
 ### Added
 - **`projects` command** — lists every stored project with its targets, file count and on-disk
   size (`--json` for scripts), so you can see what the tool keeps under the data root and how
@@ -881,7 +883,8 @@ First tagged release.
   (`extra="forbid"`) and validate on assignment; unexpected LLM gender values fold to `unknown`
   instead of entering memory.
 
-[Unreleased]: https://github.com/azratul/llm-subs/compare/v0.7.1...HEAD
+[Unreleased]: https://github.com/azratul/llm-subs/compare/v0.7.2...HEAD
+[0.7.2]: https://github.com/azratul/llm-subs/compare/v0.7.1...v0.7.2
 [0.7.1]: https://github.com/azratul/llm-subs/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/azratul/llm-subs/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/azratul/llm-subs/compare/v0.5.0...v0.6.0
