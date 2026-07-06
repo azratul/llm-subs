@@ -97,6 +97,20 @@ def project_dir(project: str) -> Path:
     return base / name
 
 
+def dir_size(path: Path) -> tuple[int, int]:
+    """Return (file_count, total_bytes) under `path`, ignoring unreadable entries."""
+    files = 0
+    total = 0
+    for entry in path.rglob("*"):
+        if entry.is_file():
+            files += 1
+            try:
+                total += entry.stat().st_size
+            except OSError:
+                pass
+    return files, total
+
+
 def memory_root(project: str, target: str) -> Path:
     """Per-target memory directory: ``<projects>/<project>/<target>``.
 

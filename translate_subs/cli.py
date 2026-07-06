@@ -17,6 +17,8 @@ from translate_subs.commands.project import (
     compact_memory_command,
     config,
     project_status_command,
+    projects_command,
+    purge_project_command,
     resolve_conflicts_command,
     update_memory_command,
 )
@@ -35,8 +37,10 @@ analyze_subtitle = _pipeline.analyze_subtitle
 batch_analyze = _pipeline.batch_analyze
 batch_translate = _pipeline.batch_translate
 compact_memory = _pipeline.compact_memory
+list_projects = _pipeline.list_projects
 project_dir = _pipeline.project_dir
 project_status = _pipeline.project_status
+purge_project = _pipeline.purge_project
 resolve_conflicts = _pipeline.resolve_conflicts
 review_translation = _pipeline.review_translation
 tighten_subtitle = _pipeline.tighten_subtitle
@@ -191,11 +195,13 @@ app.command(name="update-memory")(update_memory_command)
 app.command(name="compact-memory")(compact_memory_command)
 app.command(name="resolve-conflicts")(resolve_conflicts_command)
 app.command(name="project-status")(project_status_command)
+app.command(name="projects")(projects_command)
 app.command()(review)
 app.command()(tighten)
 app.command()(doctor)
 app.command()(validate)
 app.command(name="purge-cache")(purge_cache)
+app.command(name="purge-project")(purge_project_command)
 
 
 if __name__ == "__main__":

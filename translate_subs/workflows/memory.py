@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shutil
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -37,14 +38,18 @@ from translate_subs.workflows.models import (
     ConflictPrompt,
     EpisodeStatus,
     PipelineError,
+    ProjectSizeInfo,
     ProjectStatusResult,
+    PurgeProjectResult,
     ResolveConflictsResult,
     UpdateMemoryResult,
 )
 from translate_subs.workflows.seams import ResolveSourceFn, RunnerFactory
 from translate_subs.workflows.support import (
     context_path,
+    dir_size,
     memory_root,
+    project_dir,
     project_episode,
 )
 
@@ -308,6 +313,56 @@ def project_status(project: str, target: str = "es-latam") -> ProjectStatusResul
         conflicts=conflicts,
         episodes=episodes,
     )
+
+
+def list_projects() -> list[ProjectSizeInfo]:
+    """Inventory every stored project with its targets and on-disk size — no LLM, no source access.
+
+    The size is what `purge_project` would free: the tool's own state under the projects root
+    (per-target memory, episode contexts, checkpoints, reports, jobs, settings.json). Translated
+    subtitles live next to the media and are not counted.
+    """
+    root = config.PROJECTS_DIR
+    if not root.exists():
+        return []
+    projects: list[ProjectSizeInfo] = []
+    for entry in sorted(root.iterdir()):
+        if not entry.is_dir():
+            continue
+        files, size = dir_size(entry)
+        targets = sorted(sub.name for sub in entry.iterdir() if sub.is_dir())
+        projects.append(
+            ProjectSizeInfo(
+                name=entry.name, path=entry, targets=targets, files=files, size_bytes=size
+            )
+        )
+    return projects
+
+
+def purge_project(
+    project: str,
+    target: str | None = None,
+    *,
+    confirm: Callable[[Path, int, int], bool] | None = None,
+) -> PurgeProjectResult:
+    """Delete a project's stored state (memory, contexts, checkpoints, reports, jobs).
+
+    With `target`, only that target's memory subtree goes (`<project>/<target>`); other targets
+    and `settings.json` survive. Without it the entire project directory is removed, settings
+    included. `confirm(path, files, bytes)` runs after measuring and before deleting so the
+    caller can prompt with the real footprint; returning False aborts with nothing removed.
+    Translated subtitle files are never touched — they live next to the media, not under the
+    data root. This state can carry subtitle text, so purging is also the supported way to
+    remove a series' traces from disk.
+    """
+    path = memory_root(project, target) if target else project_dir(project)
+    if not path.exists():
+        raise PipelineError(f"No stored state at {path}.")
+    files, size = dir_size(path)
+    if confirm is not None and not confirm(path, files, size):
+        return PurgeProjectResult(path=path, files=files, size_bytes=size, purged=False)
+    shutil.rmtree(path)
+    return PurgeProjectResult(path=path, files=files, size_bytes=size, purged=True)
 
 
 def _apply_conflict_choice(project_memory: ProjectMemory, conflict: dict[str, Any]) -> bool:

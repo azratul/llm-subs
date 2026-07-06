@@ -175,6 +175,25 @@ class ProjectStatusResult:
 
 
 @dataclass
+class ProjectSizeInfo:
+    """One stored project's on-disk footprint (everything `purge-project` would free)."""
+
+    name: str
+    path: Path
+    targets: list[str] = field(default_factory=list)  # per-target memory subtrees present
+    files: int = 0
+    size_bytes: int = 0
+
+
+@dataclass
+class PurgeProjectResult:
+    path: Path
+    files: int
+    size_bytes: int
+    purged: bool  # False when the confirm callback declined; nothing was removed
+
+
+@dataclass
 class ReviewResult:
     report: ReviewReport
     report_path: Path

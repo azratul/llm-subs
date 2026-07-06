@@ -6,6 +6,19 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- **`projects` command** — lists every stored project with its targets, file count and on-disk
+  size (`--json` for scripts), so you can see what the tool keeps under the data root and how
+  much space each series takes before deciding what to purge.
+- **`purge-project` command** — deletes a project's stored state (per-target memory, episode
+  contexts, checkpoints, reports, jobs, `settings.json`). `--target` limits the purge to one
+  target's memory subtree, leaving other targets and the settings intact; without it the whole
+  project directory is removed. Prompts with the real file count/size first (`--yes` skips).
+  Complements `purge-cache`: that clears only the demux cache, while this is the supported way
+  to remove a finished series' state — which can carry its subtitle text — without hand-deleting
+  hashed episode directories under the data root. Translated subtitle files next to the media
+  are never touched.
+
 ## [0.7.1] - 2026-07-05
 
 ### Fixed

@@ -13,6 +13,7 @@ from rich.table import Table
 from translate_subs import config
 from translate_subs.diagnostics import fix_permissions, run_diagnostics
 from translate_subs.io.media_probe import probe_subtitle_tracks
+from translate_subs.workflows.support import dir_size
 
 
 def _emit_json(payload: object) -> None:
@@ -27,20 +28,6 @@ def _runtime() -> Any:
     from translate_subs import cli
 
     return cli
-
-
-def _dir_size(path: Path) -> tuple[int, int]:
-    """Return (file_count, total_bytes) under `path`, ignoring unreadable entries."""
-    files = 0
-    total = 0
-    for entry in path.rglob("*"):
-        if entry.is_file():
-            files += 1
-            try:
-                total += entry.stat().st_size
-            except OSError:
-                pass
-    return files, total
 
 
 def probe(media: Path = typer.Argument(..., help="Video file to inspect.")) -> None:
@@ -142,7 +129,7 @@ def purge_cache(
         runtime.console.print(f"Cache is already empty: [dim]{work_dir}[/dim]")
         return
 
-    files, total = _dir_size(work_dir)
+    files, total = dir_size(work_dir)
     if files == 0:
         runtime.console.print(f"Cache is already empty: [dim]{work_dir}[/dim]")
         return

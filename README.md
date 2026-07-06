@@ -409,6 +409,8 @@ written as UTF-8.
 | `compact-memory <project>` | Prunes redundant memory (identity glossary terms, duplicate/info-less characters). |
 | `resolve-conflicts <project>` | Walks flagged `conflicts.json` entries interactively (keep stored / use suggested / skip). |
 | `project-status <project>` | Shows a project's stored state for a target: glossary/character/conflict counts, and per-episode whether it was analyzed, whether a checkpoint file is present, and which output paths are tracked (no LLM call). |
+| `projects` | Lists every stored project with its targets and on-disk size — what `purge-project` would free (`--json` for scripts). |
+| `purge-project <project>` | Deletes a project's stored state: memory, episode contexts, checkpoints, reports, settings. With `--target`, only that target's memory subtree; the whole project otherwise. Translated subtitles next to your media are never touched. |
 | `validate <subtitle>` | Structural validation (parseable, timings, no leftover markup). |
 | `doctor [--provider <name>] [--fix]` | Checks the environment: media tools (ffprobe/ffmpeg), writable data/cache dirs, owner-only state permissions, and — with `--provider` — that provider's backend: for a CLI, its path, its `--version`, and the model a run would actually use (the runner's built-in default when `--model` is omitted; codex/antigravity/opencode pick internally, which is said explicitly); for Ollama, a reachable server (plus a warning on a non-loopback host); for litellm, the installed package. `--fix` repairs what it can: state/cache files left group/other-readable by an older release are tightened to owner-only. |
 | `purge-cache` | Deletes the cache of subtitle tracks extracted from containers (`$XDG_CACHE_HOME/llm-subs/work`). Series memory and reports are not touched. |
@@ -693,7 +695,11 @@ server send nothing externally). On disk the tool stores:
   characters (with gender/register), style guide, conflicts, per-episode context, block
   checkpoints (which contain translated text), `settings.json`, and the `review`/`readability`
   reports. These are written **owner-only (0600)**, in **owner-only (0700) directories**, since
-  they may contain subtitle text.
+  they may contain subtitle text. **`llm-subs projects`** lists what is stored and how much space
+  each project takes; **`llm-subs purge-project <name>`** deletes a finished project's state
+  (or one target's subtree with `--target`) — the supported way to remove a series' traces,
+  since this state can carry its subtitle text. The state is plain versioned JSON, so moving or
+  backing up a project's memory is just copying its directory (no export/import command needed).
 - **Extracted subtitle tracks** under `$XDG_CACHE_HOME/llm-subs/work/`: only a demux cache so a
   rerun skips re-extraction, kept in an owner-only (0700) directory. Clear it any time with
   **`llm-subs purge-cache`** (memory and reports are not touched).

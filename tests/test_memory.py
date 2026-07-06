@@ -391,3 +391,92 @@ def test_resolve_conflicts_applies_and_drops(tmp_path, monkeypatch):
     assert reloaded.memory.find("Akira").gender == "male"  # kept stored, not overwritten
     leftover = reloaded.load_conflicts()
     assert len(leftover) == 1 and leftover[0]["key"] == "Tokyo"  # skipped stays in log
+
+
+def _stored_project(root, name, targets=("es-latam",)):
+    """A fake on-disk project: settings.json plus one state file per target subtree."""
+    pdir = root / name
+    pdir.mkdir(parents=True)
+    (pdir / "settings.json").write_text("{}", encoding="utf-8")
+    for target in targets:
+        episode = pdir / target / "Episode 01 [abc123]"
+        episode.mkdir(parents=True)
+        (episode / "episode.context.json").write_text("x" * 128, encoding="utf-8")
+    return pdir
+
+
+def test_list_projects_reports_sizes_and_targets(tmp_path, monkeypatch):
+    from translate_subs import config
+    from translate_subs.pipeline import list_projects
+
+    monkeypatch.setattr(config, "PROJECTS_DIR", tmp_path)
+    _stored_project(tmp_path, "Serie A", targets=("es-latam", "fr-fr"))
+    _stored_project(tmp_path, "Serie B")
+    (tmp_path / "stray.txt").write_text("x", encoding="utf-8")  # non-dir entries are ignored
+
+    projects = list_projects()
+    assert [p.name for p in projects] == ["Serie A", "Serie B"]
+    first = projects[0]
+    assert first.targets == ["es-latam", "fr-fr"]
+    assert first.files == 3  # settings.json + one context file per target
+    assert first.size_bytes > projects[1].size_bytes > 0
+
+
+def test_list_projects_without_projects_root(tmp_path, monkeypatch):
+    from translate_subs import config
+    from translate_subs.pipeline import list_projects
+
+    monkeypatch.setattr(config, "PROJECTS_DIR", tmp_path / "missing")
+    assert list_projects() == []
+
+
+def test_purge_project_target_keeps_other_targets_and_settings(tmp_path, monkeypatch):
+    from translate_subs import config
+    from translate_subs.pipeline import purge_project
+
+    monkeypatch.setattr(config, "PROJECTS_DIR", tmp_path)
+    pdir = _stored_project(tmp_path, "Serie", targets=("es-latam", "fr-fr"))
+
+    result = purge_project("Serie", "es-latam")
+    assert result.purged is True
+    assert result.files == 1 and result.size_bytes == 128
+    assert not (pdir / "es-latam").exists()
+    assert (pdir / "fr-fr").exists()
+    assert (pdir / "settings.json").exists()
+
+
+def test_purge_project_whole_project(tmp_path, monkeypatch):
+    from translate_subs import config
+    from translate_subs.pipeline import purge_project
+
+    monkeypatch.setattr(config, "PROJECTS_DIR", tmp_path)
+    pdir = _stored_project(tmp_path, "Serie", targets=("es-latam", "fr-fr"))
+
+    result = purge_project("Serie")
+    assert result.purged is True and result.files == 3
+    assert not pdir.exists()
+
+
+def test_purge_project_confirm_can_abort(tmp_path, monkeypatch):
+    from translate_subs import config
+    from translate_subs.pipeline import purge_project
+
+    monkeypatch.setattr(config, "PROJECTS_DIR", tmp_path)
+    pdir = _stored_project(tmp_path, "Serie")
+
+    seen = []
+    result = purge_project("Serie", confirm=lambda path, files, size: seen.append((files, size)))
+    assert result.purged is False
+    assert pdir.exists() and (pdir / "settings.json").exists()  # nothing was removed
+    assert seen == [(2, 130)]  # the prompt saw the real footprint before any deletion
+
+
+def test_purge_project_rejects_missing_and_traversal(tmp_path, monkeypatch):
+    from translate_subs import config
+    from translate_subs.pipeline import PipelineError, purge_project
+
+    monkeypatch.setattr(config, "PROJECTS_DIR", tmp_path)
+    with pytest.raises(PipelineError, match="No stored state"):
+        purge_project("Nope")
+    with pytest.raises(PipelineError, match="Invalid project name"):
+        purge_project("../evil")

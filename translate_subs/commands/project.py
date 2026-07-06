@@ -9,6 +9,8 @@ import typer
 from pydantic import ValidationError
 from rich.table import Table
 
+# Aliased: this module defines a `config` *command* below, which would shadow the module.
+from translate_subs import config as app_config
 from translate_subs.memory.compact import AliasMatch
 from translate_subs.settings import ProjectSettings, load_settings, save_settings
 
@@ -357,6 +359,105 @@ def project_status_command(
             )
         runtime.console.print(table)
     runtime.console.print(f"Memory: [green]{result.project_dir}[/green]")
+
+
+def _fmt_size(size_bytes: int) -> str:
+    """Human-readable size; state dirs are often far under a MiB, so don't print '0.0 MiB'."""
+    if size_bytes < 1024:
+        return f"{size_bytes} B"
+    if size_bytes < 1024 * 1024:
+        return f"{size_bytes / 1024:.1f} KiB"
+    return f"{size_bytes / (1024 * 1024):.1f} MiB"
+
+
+def projects_command(
+    json_out: bool = typer.Option(False, "--json", help="Emit the list as JSON."),
+) -> None:
+    """List every stored project with its targets and on-disk size.
+
+    Sizes cover the tool's own state (memory, episode contexts, checkpoints, reports) — what
+    `purge-project` would free. Translated subtitles live next to your media and are not counted.
+    """
+    runtime = _runtime()
+    try:
+        projects = runtime.list_projects()
+    except runtime._EXPECTED_ERRORS as exc:
+        runtime.console.print(f"[red]Error:[/red] {exc}")
+        raise typer.Exit(code=1)
+
+    if json_out:
+        import json
+
+        typer.echo(
+            json.dumps(
+                [
+                    {
+                        "name": info.name,
+                        "path": str(info.path),
+                        "targets": info.targets,
+                        "files": info.files,
+                        "bytes": info.size_bytes,
+                    }
+                    for info in projects
+                ],
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return
+
+    if not projects:
+        runtime.console.print(f"No stored projects under [dim]{app_config.PROJECTS_DIR}[/dim].")
+        return
+    table = Table(title="Stored projects")
+    for column in ("project", "targets", "files", "size"):
+        table.add_column(column)
+    for info in projects:
+        table.add_row(
+            info.name,
+            ", ".join(info.targets) or "[dim]—[/dim]",
+            str(info.files),
+            _fmt_size(info.size_bytes),
+        )
+    runtime.console.print(table)
+    runtime.console.print(f"Root: [green]{app_config.PROJECTS_DIR}[/green]")
+
+
+def purge_project_command(
+    project: str = typer.Argument(..., help="Project/series name."),
+    target: str | None = typer.Option(
+        None,
+        help="Only purge this target's memory subtree (e.g. es-latam); "
+        "the whole project, settings included, otherwise.",
+    ),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Delete without the confirmation prompt."),
+) -> None:
+    """Delete a project's stored state: memory, episode contexts, checkpoints, reports.
+
+    Removes only llm-subs' own data under the projects root (see `projects` for sizes); the
+    translated subtitle files next to your media are never touched. This state can carry the
+    series' subtitle text, so purging is also how you remove its traces from disk.
+    """
+    runtime = _runtime()
+
+    def confirm(path: Path, files: int, size: int) -> bool:
+        if yes:
+            return True
+        return bool(typer.confirm(f"Delete {files} file(s) ({_fmt_size(size)}) under {path}?"))
+
+    try:
+        result = runtime.purge_project(project, target, confirm=confirm)
+    except runtime._EXPECTED_ERRORS as exc:
+        runtime.console.print(f"[red]Error:[/red] {exc}")
+        raise typer.Exit(code=1)
+
+    if not result.purged:
+        runtime.console.print("Aborted.")
+        raise typer.Exit(code=1)
+    runtime.console.print(
+        f"Freed [green]{_fmt_size(result.size_bytes)}[/green] from {result.files} file(s): "
+        f"removed {result.path}"
+    )
 
 
 def resolve_conflicts_command(

@@ -252,3 +252,41 @@ def test_command_error_path_exits_one(monkeypatch):
     monkeypatch.setattr(cli, "compact_memory", boom)
     out = runner.invoke(app, ["compact-memory", "P"])
     assert out.exit_code == 1 and "Error" in out.stdout
+
+
+# --- project: projects / purge-project ----------------------------------------------
+
+
+def test_projects_and_purge_project_commands(tmp_path, monkeypatch):
+    import json
+
+    from translate_subs import config
+
+    monkeypatch.setattr(config, "PROJECTS_DIR", tmp_path)
+    state = tmp_path / "Serie" / "es-latam"
+    state.mkdir(parents=True)
+    (state / "glossary.json").write_text("{}", encoding="utf-8")
+
+    listed = runner.invoke(app, ["projects"])
+    assert listed.exit_code == 0
+    assert "Serie" in listed.stdout and "es-latam" in listed.stdout
+
+    as_json = runner.invoke(app, ["projects", "--json"])
+    payload = json.loads(as_json.stdout)
+    assert payload[0]["name"] == "Serie" and payload[0]["files"] == 1
+
+    # Declining the confirmation aborts without touching anything.
+    aborted = runner.invoke(app, ["purge-project", "Serie"], input="n\n")
+    assert aborted.exit_code == 1 and "Aborted" in aborted.stdout
+    assert state.exists()
+
+    purged = runner.invoke(app, ["purge-project", "Serie", "--yes"])
+    assert purged.exit_code == 0 and "Freed" in purged.stdout
+    assert not (tmp_path / "Serie").exists()
+
+    # An unknown project is an error (likely a typo), not a silent no-op.
+    missing = runner.invoke(app, ["purge-project", "Serie", "--yes"])
+    assert missing.exit_code == 1
+
+    empty = runner.invoke(app, ["projects"])
+    assert empty.exit_code == 0 and "No stored projects" in empty.stdout
