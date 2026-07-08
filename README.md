@@ -33,8 +33,8 @@ episodes.
 - `ffmpeg`/`ffprobe` (for embedded tracks inside containers).
 - At least one backend to actually translate: an agent CLI (`claude`, `codex`, `antigravity`,
   `opencode`) installed and authenticated, a local [Ollama](https://ollama.com) server
-  (`--provider ollama --model qwen3:4b`, host from `$OLLAMA_HOST`), or [LiteLLM]
-  (https://docs.litellm.ai) (`uv sync --extra litellm`, then `--provider litellm --model
+  (`--provider ollama --model qwen3:4b`, host from `$OLLAMA_HOST`), or
+  [LiteLLM](https://docs.litellm.ai) (`uv sync --extra litellm`, then `--provider litellm --model
   ollama/qwen3:4b`). (The `identity` provider does not translate: it copies the text and is used
   to verify the round-trip.)
 
@@ -58,7 +58,17 @@ llm-subs --help
 ```
 
 `ffmpeg`/`ffprobe` are **system** dependencies (not installed by pip); install them with your
-package manager. For `--provider litellm`, install the extra with
+package manager — both ship in the same package:
+
+```bash
+sudo apt install ffmpeg          # Debian/Ubuntu
+sudo dnf install ffmpeg          # Fedora
+sudo pacman -S ffmpeg            # Arch
+brew install ffmpeg              # macOS (Homebrew)
+winget install Gyan.FFmpeg       # Windows (or: choco install ffmpeg)
+```
+
+`llm-subs doctor` confirms both are found. For `--provider litellm`, install the extra with
 `uv tool install "llm-subs[litellm]"` (or `uv tool install ".[litellm]"` from a clone).
 
 Tab completion for bash/zsh/fish comes built in — install it once with
@@ -153,6 +163,8 @@ For personal use there are two common paths:
   This can give better quality, but the visible subtitle text is sent to that provider.
 
 `identity` is only for testing the round-trip; it copies the source text without translating.
+`file-handoff` writes the translation jobs to disk for you (or an agent) to fill in by hand —
+useful when no backend fits.
 
 ### 3. Translate one movie or episode
 
