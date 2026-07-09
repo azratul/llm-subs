@@ -325,6 +325,10 @@ manual `analyze` → `translate` flow and how conflicts are handled.
 Runs are resumable and outputs are protected:
 
 ```bash
+# Not sure what a batch would do? Preview it first: which files match, where each output would
+# land, and which are already done/stale — no LLM call, nothing written.
+llm-subs batch "Show/Season 1" --project "Show" --glob '*.mkv' -r --dry-run
+
 # A crashed/Ctrl-C'd run: just re-run the same command — finished blocks are reused from the
 # checkpoint, only the missing ones are re-translated. Add --no-resume to force a clean redo.
 llm-subs batch "Show/Season 1" --project "Show" --glob '*.mkv' -r
@@ -412,7 +416,7 @@ written as UTF-8.
 |---|---|
 | `probe <media>` | Lists the embedded subtitle tracks of a container. |
 | `translate <input>` | Translates and exports `<base>.<lang>.<format>` (`.ass` by default, `.srt` with `--format srt`). |
-| `batch <directory>` | Translates every matching file in a directory (`--glob`, default `*.mkv`; `-r` recurses), skipping done episodes and continuing past per-episode failures. Pass `--pre-analyze` to analyze all episodes first and build full series memory before translating any of them. |
+| `batch <directory>` | Translates every matching file in a directory (`--glob`, default `*.mkv`; `-r` recurses), skipping done episodes and continuing past per-episode failures. Pass `--pre-analyze` to analyze all episodes first and build full series memory before translating any of them. `--dry-run` previews the whole batch (planned/skipped/stale/modified per file, resolved outputs, line/block counts) without calling any LLM or writing anything. |
 | `config <project>` | Shows or sets per-project default options (provider, model, target, lang, format, reasoning) in `settings.json`. |
 | `analyze <input>` | Generates `episode.context.json` and updates the series memory. |
 | `review <source> <translated>` | Quality review → `episode.review.md` (with `--apply`, applies the safe fixes). |
@@ -516,6 +520,21 @@ With `--out-dir`, each input's sub-directory relative to the batch root is mirro
 (`Season 1/Episode 01.mkv` → `<out-dir>/Season 1/Episode 01.es-latam.ass`), so two same-named
 episodes in different season folders never collapse onto one output filename and overwrite each
 other.
+
+Before spending tokens on a season, preview it with `--dry-run`:
+
+```bash
+llm-subs batch "TV Shows/Show/Season 1" --project "Show" --provider claude --dry-run
+```
+
+It runs the real discovery and per-episode checks — which files match, where each output would
+land, and the status a real run would give it — but stops before any provider call: episodes that
+would translate are reported **planned** (with their line and block counts, one block ≈ one LLM
+call), and existing outputs are classified **skipped**/**stale**/**modified** by the same manifest
+comparison a real run uses, so the preview can't drift from what `batch` would actually do. No LLM
+is called and nothing is written (`--pre-analyze` is skipped too — it would call the LLM); combined
+with `--json`, or with `--fail-on-stale` as a cheap freshness check in a script, it answers "what
+would this batch do?" without touching anything.
 
 #### Building series memory before translating
 

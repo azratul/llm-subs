@@ -16,9 +16,10 @@ from translate_subs.ai.checkpoint import (
     translate_with_checkpoint,
 )
 from translate_subs.ai.cli_adapters import CLI_PROVIDERS
-from translate_subs.ai.job_protocol import JobLine
+from translate_subs.ai.job_protocol import JobLine, TranslationJobIn
 from translate_subs.ai.provider import (
     ProviderError,
+    TranslationProvider,
     is_per_episode_failure,
 )
 from translate_subs.domain.models import TranslatableUnit
@@ -179,6 +180,41 @@ def _ensure_output_writable(
     raise OutputExistsError(f"Output already exists: {out_file}. Use --force to overwrite.")
 
 
+def _run_provider(
+    translation_provider: TranslationProvider,
+    jobs: list[TranslationJobIn],
+    *,
+    provider: str,
+    signature: str,
+    checkpoint_file: Path,
+    resume: bool,
+    parallel: int | None,
+    on_progress: Callable[[BlockProgress], None] | None,
+) -> tuple[dict[str, str], list[str]]:
+    """Run the translation jobs; the slow CLI/API backends go through the block checkpoint.
+
+    The checkpoint is keyed on `signature` (provider|resolved model|reasoning) so a later change
+    to a provider's built-in default doesn't silently reuse old blocks.
+    """
+    if provider in CLI_PROVIDERS:
+        checkpoint = (
+            BlockCheckpoint.load(checkpoint_file, signature)
+            if resume
+            else BlockCheckpoint(path=checkpoint_file, signature=signature)
+        )
+        if parallel is None:
+            parallel = _DEFAULT_API_PARALLEL if provider in _API_PROVIDERS else 1
+        return translate_with_checkpoint(
+            translation_provider,
+            jobs,
+            checkpoint=checkpoint,
+            on_progress=on_progress,
+            parallel=parallel,
+        )
+    translations = translation_provider.translate(jobs)
+    return translations, list(getattr(translation_provider, "untranslated_ids", []))
+
+
 def translate_subtitle(
     input_path: str | Path,
     *,
@@ -201,6 +237,7 @@ def translate_subtitle(
     resume: bool = True,
     parallel: int | None = None,
     timeout: int | None = None,
+    dry_run: bool = False,
     on_progress: Callable[[BlockProgress], None] | None = None,
     resolve_source_fn: ResolveSourceFn,
     provider_factory: ProviderFactory,
@@ -286,28 +323,32 @@ def translate_subtitle(
         return base_rules + rules_for_text(memory_rules, text, speakers)
 
     jobs = build_jobs(units, target=target, rules_for=rules_for)
-    if provider in CLI_PROVIDERS:
-        # Key the checkpoint on the model the runner will actually use (see effective_model above),
-        # so a later change to a provider's built-in default doesn't silently reuse old blocks.
-        signature = f"{provider}|{effective_model or model or ''}|{reasoning or ''}"
-        checkpoint_file = jobs_dir.parent / CHECKPOINT_FILE
-        checkpoint = (
-            BlockCheckpoint.load(checkpoint_file, signature)
-            if resume
-            else BlockCheckpoint(path=checkpoint_file, signature=signature)
+    if dry_run:
+        # Preview stops here, before any provider call: no LLM runs and no output, manifest or
+        # checkpoint is written. Everything above already made the real run's decisions — the
+        # source was resolved (an embedded track may land in the extraction cache), the effective
+        # model recorded, and `_ensure_output_writable` raised the same skip/stale/modified errors
+        # a real run would — so the preview cannot drift from what an actual run does.
+        return TranslateResult(
+            source=source,
+            output_path=out_file,
+            n_units=len(units),
+            n_jobs=len(jobs),
+            output_validation=ValidationResult(ok=True),
+            context_used=context_used,
+            memory_used=memory_used,
+            context_stale=context_stale,
         )
-        if parallel is None:
-            parallel = _DEFAULT_API_PARALLEL if provider in _API_PROVIDERS else 1
-        translations, untranslated_ids = translate_with_checkpoint(
-            translation_provider,
-            jobs,
-            checkpoint=checkpoint,
-            on_progress=on_progress,
-            parallel=parallel,
-        )
-    else:
-        translations = translation_provider.translate(jobs)
-        untranslated_ids = list(getattr(translation_provider, "untranslated_ids", []))
+    translations, untranslated_ids = _run_provider(
+        translation_provider,
+        jobs,
+        provider=provider,
+        signature=f"{provider}|{effective_model or model or ''}|{reasoning or ''}",
+        checkpoint_file=jobs_dir.parent / CHECKPOINT_FILE,
+        resume=resume,
+        parallel=parallel,
+        on_progress=on_progress,
+    )
 
     mapping_check = validate_translations(units, translations)
     if not mapping_check.ok:
@@ -411,6 +452,24 @@ def batch_analyze(
     return result
 
 
+def _success_item(path: Path, translated: TranslateResult, *, dry_run: bool) -> BatchItem:
+    """The batch record for an episode that translated — or, under dry_run, would translate."""
+    if dry_run:
+        return BatchItem(
+            path,
+            "planned",
+            output_path=translated.output_path,
+            n_units=translated.n_units,
+            n_jobs=translated.n_jobs,
+        )
+    return BatchItem(
+        path,
+        "translated",
+        output_path=translated.output_path,
+        untranslated_ids=translated.untranslated_ids,
+    )
+
+
 def batch_translate(
     directory: str | Path,
     *,
@@ -425,6 +484,7 @@ def batch_translate(
     target = translate_kwargs.get("target", config.DEFAULT_TARGET)
     inputs = discover_inputs_fn(directory, globs=globs, recursive=recursive, target=target)
     out_dir = translate_kwargs.get("out_dir")
+    dry_run = bool(translate_kwargs.get("dry_run"))
     base_resolved = Path(directory).resolve()
     result = BatchResult()
     total = len(inputs)
@@ -461,12 +521,5 @@ def batch_translate(
         except (PipelineError, *_EXPECTED_PIPELINE_ERRORS) as exc:
             result.items.append(BatchItem(path, "failed", error=str(exc)))
         else:
-            result.items.append(
-                BatchItem(
-                    path,
-                    "translated",
-                    output_path=translated.output_path,
-                    untranslated_ids=translated.untranslated_ids,
-                )
-            )
+            result.items.append(_success_item(path, translated, dry_run=dry_run))
     return result

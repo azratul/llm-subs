@@ -69,10 +69,15 @@ class TranslateResult:
 @dataclass
 class BatchItem:
     input_path: Path
-    status: Literal["translated", "skipped", "stale", "modified", "failed"]
+    # "planned" only occurs under dry_run: the episode passed the same checks a real run performs
+    # (source resolved, output writable) and would be translated.
+    status: Literal["translated", "planned", "skipped", "stale", "modified", "failed"]
     output_path: Path | None = None
     error: str | None = None
     untranslated_ids: list[str] = field(default_factory=list)
+    # Populated for "planned" items: how much work the real run would do (jobs = LLM calls).
+    n_units: int = 0
+    n_jobs: int = 0
 
 
 @dataclass
@@ -82,6 +87,10 @@ class BatchResult:
     @property
     def n_translated(self) -> int:
         return sum(1 for item in self.items if item.status == "translated")
+
+    @property
+    def n_planned(self) -> int:
+        return sum(1 for item in self.items if item.status == "planned")
 
     @property
     def n_skipped(self) -> int:

@@ -149,6 +149,7 @@ def _report_batch_results(
     untranslated_total: int,
     elapsed: Callable[[], float],
     json_out: bool,
+    dry_run: bool = False,
 ) -> None:
     """Emit the per-episode batch outcome: JSON document, empty notice, or table + summary."""
     if json_out:
@@ -156,8 +157,10 @@ def _report_batch_results(
             json.dumps(
                 {
                     "directory": str(directory),
+                    "dry_run": dry_run,
                     "summary": {
                         "translated": result.n_translated,
+                        "planned": result.n_planned,
                         "skipped": result.n_skipped,
                         "stale": result.n_stale,
                         "modified": result.n_modified,
@@ -171,6 +174,12 @@ def _report_batch_results(
                             "output": str(item.output_path) if item.output_path else None,
                             "error": item.error,
                             "untranslated_ids": item.untranslated_ids,
+                            # Only a dry run knows these up front; jobs = expected LLM calls.
+                            **(
+                                {"units": item.n_units, "blocks": item.n_jobs}
+                                if item.status == "planned"
+                                else {}
+                            ),
                         }
                         for item in result.items
                     ],
@@ -188,6 +197,7 @@ def _report_batch_results(
         table.add_column(column)
     marks = {
         "translated": "[green]translated[/green]",
+        "planned": "[cyan]planned[/cyan]",
         "skipped": "[yellow]skipped[/yellow]",
         "stale": "[yellow]stale[/yellow]",
         "modified": "[yellow]modified[/yellow]",
@@ -198,6 +208,8 @@ def _report_batch_results(
             detail = str(item.output_path)
             if item.untranslated_ids:
                 detail += f"  ([yellow]{len(item.untranslated_ids)} untranslated[/yellow])"
+        elif item.status == "planned":
+            detail = f"{item.output_path}  ({item.n_units} line(s), {item.n_jobs} block(s))"
         elif item.status == "skipped":
             detail = "output exists (use --force)"
         elif item.status == "stale":
@@ -208,14 +220,21 @@ def _report_batch_results(
             detail = item.error or "error"
         table.add_row(item.input_path.name, marks[item.status], detail)
     runtime.console.print(table)
+    lead = (
+        f"Planned [cyan]{result.n_planned}[/cyan]"
+        if dry_run
+        else f"Translated [green]{result.n_translated}[/green]"
+    )
     runtime.console.print(
-        f"Translated [green]{result.n_translated}[/green], "
+        f"{lead}, "
         f"skipped [yellow]{result.n_skipped}[/yellow], "
         f"stale [yellow]{result.n_stale}[/yellow], "
         f"modified [yellow]{result.n_modified}[/yellow], "
         f"failed [red]{result.n_failed}[/red].  "
         f"Total: {_fmt_duration(elapsed())}"
     )
+    if dry_run:
+        runtime.console.print("[dim]Dry run: no LLM was called and nothing was written.[/dim]")
 
 
 def _report_source_resolution(runtime: Any, source: ResolvedSource, lang: str) -> None:
@@ -457,6 +476,13 @@ def batch(
     force: bool = typer.Option(
         False, "--force", "-f", help="Re-translate episodes whose output already exists."
     ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        help="Preview the batch without translating: list every matching file with the status "
+        "a real run would give it (planned/skipped/stale/modified/failed), the resolved output "
+        "path and the lines/blocks it would send. No LLM is called and nothing is written.",
+    ),
     strict_lang: bool = typer.Option(
         False,
         "--strict-lang",
@@ -519,12 +545,23 @@ def batch(
         lang = overrides.get("lang", lang)
         format = overrides.get("format", format)
         providers_used = {provider}
-        if pre_analyze:
+        if pre_analyze and not dry_run:
             providers_used.add(overrides.get("analyze_provider") or provider)
         # Under --json the warning goes to stderr so stdout stays valid JSON, but is never dropped.
         runtime._warn_weak_backend(*providers_used, err=json_out)
 
-        if pre_analyze:
+        if dry_run and not json_out:
+            shown_model = model or "(provider default)"
+            shown_project = project or "(per-episode folder)"
+            runtime.console.print(
+                f"[bold]Dry run[/bold] — provider={provider} model={shown_model} "
+                f"target={target} format={format} project={shown_project}"
+            )
+            if pre_analyze:
+                runtime.console.print(
+                    "[dim]--pre-analyze is skipped in a dry run (it would call the LLM).[/dim]"
+                )
+        if pre_analyze and not dry_run:
             _run_pre_analyze_phase(
                 runtime,
                 directory,
@@ -563,6 +600,7 @@ def batch(
             resume=not no_resume,
             parallel=parallel,
             timeout=timeout,
+            dry_run=dry_run,
         )
     except runtime._EXPECTED_ERRORS as exc:
         if json_out:
@@ -579,6 +617,7 @@ def batch(
         untranslated_total=untranslated_total,
         elapsed=translate_elapsed,
         json_out=json_out,
+        dry_run=dry_run,
     )
 
     if result.n_failed:

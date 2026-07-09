@@ -254,6 +254,7 @@ def translate_subtitle(
     resume: bool = True,
     parallel: int | None = None,
     timeout: int | None = None,
+    dry_run: bool = False,
     on_progress: Callable[[BlockProgress], None] | None = None,
 ) -> TranslateResult:
     """Resolve the source, translate by blocks, and export `<base>.<lang>.<fmt>`.
@@ -263,6 +264,11 @@ def translate_subtitle(
     The default `.ass` keeps style-level positioning so simultaneous cues (e.g. a
     translator note above the dialogue) stay readable; `.srt` is flat, so overlapping
     cues are merged into single stacked cues.
+
+    With `dry_run=True` the run stops right before the first provider call and returns
+    what a real run would do (resolved output path, line/block counts); the existing-output
+    checks still raise, so skip/stale/modified classification matches a real run. No LLM
+    is called and nothing is written.
     """
     return _translate_subtitle(
         input_path,
@@ -285,6 +291,7 @@ def translate_subtitle(
         resume=resume,
         parallel=parallel,
         timeout=timeout,
+        dry_run=dry_run,
         on_progress=on_progress,
         resolve_source_fn=resolve_source,
         provider_factory=make_provider,

@@ -113,6 +113,106 @@ def test_batch_reports_stale_when_source_changed(tmp_path, monkeypatch):
     assert output.read_text("utf-8") == written  # stale output is warned about, never overwritten
 
 
+def test_batch_dry_run_plans_without_writing(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "PROJECTS_DIR", tmp_path / "projects")
+    one_line_srt(tmp_path / "ep01.en.srt")
+    one_line_srt(tmp_path / "ep02.en.srt")
+
+    result = pipeline.batch_translate(
+        tmp_path,
+        globs=("*.srt",),
+        provider="identity",
+        target="es-latam",
+        fmt="srt",
+        interactive=False,
+        project="P",
+        dry_run=True,
+    )
+
+    assert [i.status for i in result.items] == ["planned", "planned"]
+    assert result.n_planned == 2 and result.n_translated == 0 and result.n_failed == 0
+    first = result.items[0]
+    assert first.output_path == tmp_path / "ep01.es-latam.srt"
+    assert first.n_units == 1 and first.n_jobs == 1
+    # The preview must leave no trace: no output next to the media, no project state on disk.
+    assert not (tmp_path / "ep01.es-latam.srt").exists()
+    assert not (tmp_path / "ep02.es-latam.srt").exists()
+    assert not (tmp_path / "projects").exists()
+
+
+def test_batch_dry_run_classifies_existing_outputs(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "PROJECTS_DIR", tmp_path / "projects")
+    src = tmp_path / "ep01.en.srt"
+    one_line_srt(src)
+    common = dict(
+        globs=("*.srt",),
+        provider="identity",
+        target="es-latam",
+        fmt="srt",
+        interactive=False,
+        project="P",
+    )
+
+    pipeline.batch_translate(tmp_path, **common)  # real run: writes output + manifest
+    output = tmp_path / "ep01.es-latam.srt"
+    written = output.read_text("utf-8")
+
+    current = pipeline.batch_translate(tmp_path, dry_run=True, **common)
+    assert current.items[0].status == "skipped"
+
+    # Edit the source: the dry run reports the output stale, exactly like a real run would.
+    subs = pysubs2.SSAFile()
+    subs.events.append(pysubs2.SSAEvent(start=0, end=2000, text="A different line entirely."))
+    subs.save(str(src), format_="srt")
+
+    stale = pipeline.batch_translate(tmp_path, dry_run=True, **common)
+    assert stale.items[0].status == "stale"
+    assert output.read_text("utf-8") == written  # a dry run never rewrites anything
+
+
+def test_batch_cli_dry_run_previews_without_llm(tmp_path, monkeypatch):
+    import json as _json
+
+    from translate_subs import cli
+
+    monkeypatch.setattr(config, "PROJECTS_DIR", tmp_path / "projects")
+    season = tmp_path / "season"
+    season.mkdir()
+    one_line_srt(season / "e1.en.srt")
+
+    def _fail_analyze(*args, **kwargs):
+        raise AssertionError("--pre-analyze must be skipped under --dry-run (it calls the LLM)")
+
+    monkeypatch.setattr(cli, "batch_analyze", _fail_analyze)
+
+    args = [
+        "batch",
+        str(season),
+        "--glob",
+        "*.srt",
+        "--provider",
+        "identity",
+        "--project",
+        "Q",
+        "--dry-run",
+        "--pre-analyze",
+    ]
+    res = CliRunner().invoke(app, [*args, "--json"])
+    assert res.exit_code == 0
+    payload = _json.loads(res.stdout)
+    assert payload["dry_run"] is True
+    assert payload["summary"]["planned"] == 1 and payload["summary"]["translated"] == 0
+    item = payload["items"][0]
+    assert item["status"] == "planned" and item["units"] == 1 and item["blocks"] == 1
+    assert not (season / "e1.es-latam.srt").exists()
+
+    human = CliRunner().invoke(app, args)
+    assert human.exit_code == 0
+    assert "Dry run" in human.stdout and "planned" in human.stdout
+    assert "--pre-analyze is skipped" in human.stdout
+    assert not (season / "e1.es-latam.srt").exists()
+
+
 def test_batch_out_dir_mirrors_subfolders_no_collision(tmp_path, monkeypatch):
     # Same-named episodes in different season folders must not collapse onto one flat output.
     monkeypatch.setattr(config, "PROJECTS_DIR", tmp_path / "projects")
