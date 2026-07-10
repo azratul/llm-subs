@@ -75,7 +75,8 @@ def test_explicit_track_and_image_rejection():
     tracks = [_track(0, lang="eng"), _track(1, lang="spa")]
     assert select_track(tracks, lang=None, track_index=1, interactive=False).rel_index == 1
 
-    with pytest.raises(SourceError, match="Only image subtitle tracks"):
+    # The rejection must tell the user the way out (OCR / text sidecar), not just refuse.
+    with pytest.raises(SourceError, match="Only image subtitle tracks.*OCR.*sidecar"):
         select_track(
             [_track(0, codec="hdmv_pgs_subtitle")],
             lang="eng",

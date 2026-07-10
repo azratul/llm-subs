@@ -248,7 +248,8 @@ def select_track(
     if not text_tracks:
         if tracks:
             raise SourceError(
-                "Only image subtitle tracks (PGS/VobSub) present; need OCR (out of v1)."
+                "Only image subtitle tracks (PGS/VobSub) present. OCR them to text first "
+                "(e.g. SubtitleEdit/Tesseract) or provide a text sidecar (.srt/.ass)."
             )
         raise SourceError("Container has no subtitle tracks.")
 
