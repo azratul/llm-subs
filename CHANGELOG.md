@@ -6,6 +6,33 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-07-10
+
+### Added
+- **`batch --dry-run`** — previews a season without translating: every matching file is listed
+  with the status a real run would give it and the work it represents. The whole pre-flight runs
+  for real — source resolution (embedded track selection included), the freshness check against
+  the output manifest (so existing outputs classify as skipped/stale/modified exactly as a real
+  run would), and resolved-model recording — but no LLM is called and nothing is written (no
+  output, no manifest, no checkpoint, not even the project directory). Episodes that would
+  translate are reported as **planned** with their line and block counts (one block ≈ one LLM
+  call), in the table and in `--json` (which also gains a top-level `dry_run` flag and a
+  `planned` summary count). `--pre-analyze` is skipped under a dry run, with a notice, since it
+  would call the LLM. Combined with `--fail-on-stale` it doubles as a cheap freshness check for
+  scripts.
+- **README: per-OS ffmpeg install commands** (apt/dnf/pacman/brew/winget/choco) in the install
+  section, plus a note that `llm-subs doctor` confirms the tools are found, and a mention of the
+  `file-handoff` provider in "Pick a backend" for running without any CLI/API backend.
+
+### Fixed
+- **The image-only track rejection now says what to do.** A container whose only subtitle tracks
+  are bitmaps (PGS/VobSub) was rejected with "need OCR (out of v1)" — a stale version-scope
+  reference that gave no way forward. The error now names the route: OCR the track to text first
+  (e.g. SubtitleEdit/Tesseract) or provide a text sidecar (`.srt`/`.ass`).
+- **README: the LiteLLM docs link rendered as literal text.** The `[label](url)` pair was split
+  across a line break between `]` and `(`, which CommonMark does not join; the link is whole
+  again.
+
 ## [0.7.2] - 2026-07-06
 
 ### Added
@@ -883,7 +910,8 @@ First tagged release.
   (`extra="forbid"`) and validate on assignment; unexpected LLM gender values fold to `unknown`
   instead of entering memory.
 
-[Unreleased]: https://github.com/azratul/llm-subs/compare/v0.7.2...HEAD
+[Unreleased]: https://github.com/azratul/llm-subs/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/azratul/llm-subs/compare/v0.7.2...v0.8.0
 [0.7.2]: https://github.com/azratul/llm-subs/compare/v0.7.1...v0.7.2
 [0.7.1]: https://github.com/azratul/llm-subs/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/azratul/llm-subs/compare/v0.6.0...v0.7.0
